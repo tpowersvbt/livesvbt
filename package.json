@@ -1,0 +1,13 @@
+{
+  "name": "livesvbt",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Silicon Valley Bank and Trust website",
+  "main": "server.js",
+  "scripts": {
+    "build": "node scripts/build.js",
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "engines": { "node": ">=18" }
+}
