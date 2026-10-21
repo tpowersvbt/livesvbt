@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: svbt
+    name: Final
     runtime: node
     region: oregon
     plan: 0.5c-512mb
