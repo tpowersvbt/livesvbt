@@ -4,6 +4,7 @@ services:
     runtime: node
     region: oregon
     plan: free
+    branch: main   
     buildCommand: npm ci && npm run build
     startCommand: NODE_ENV=production npm start
     envVars:
@@ -19,9 +20,7 @@ services:
         value: ./monthly/statements
       - key: TRUST_PROXY
         value: true
-      - key: DEMO_SEED
-        value: false
-      - key: DEMO_MODERATOR_EMAIL
+      - key: MODERATOR_EMAIL
         value: tpower@siliconvalleybankandtrust.com
       - key: DEMO_MODERATOR_PASSWORD
-        value: svbt2026!
+        value: LetsGetGoing2026$
