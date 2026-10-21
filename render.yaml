@@ -3,15 +3,15 @@ services:
     name: svbt
     runtime: node
     region: oregon
-    plan: free
+    plan: 0.5c-512mb
     branch: main   
     buildCommand: npm ci && npm run build
     startCommand: NODE_ENV=production npm start
     envVars:
       - key: APP_ORIGIN
-        value: https://siliconvalleybankandtrust.com
+        value: https://svbt-zkkw.onrender.com/m
       - key: PORT
-        value: 3000
+        value: 10000
       - key: HOST
         value: 0.0.0.0
       - key: DB_PATH
