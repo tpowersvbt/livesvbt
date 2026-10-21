@@ -84,7 +84,7 @@ export async function createApp(options = {}) {
     const custAccount = db.prepare('SELECT id FROM accounts WHERE userId=?').get(custUser.id);
     if (custAccount && !db.prepare('SELECT id FROM transactions WHERE accountId=?').get(custAccount.id)) {
       console.log('Seeding demo transactions and statements...');
-      javascript
+    
 Copy
 if (process.env.NODE_ENV !== 'production') {
   await seedDemo(db);
