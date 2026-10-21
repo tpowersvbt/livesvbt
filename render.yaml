@@ -9,7 +9,7 @@ services:
     startCommand: NODE_ENV=production npm start
     envVars:
       - key: APP_ORIGIN
-        value: https://svbt-zkkw.onrender.com/m
+        value: https://svbt-zkkw.onrender.com
       - key: PORT
         value: 10000
       - key: HOST
