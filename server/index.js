@@ -84,7 +84,11 @@ export async function createApp(options = {}) {
     const custAccount = db.prepare('SELECT id FROM accounts WHERE userId=?').get(custUser.id);
     if (custAccount && !db.prepare('SELECT id FROM transactions WHERE accountId=?').get(custAccount.id)) {
       console.log('Seeding demo transactions and statements...');
-      await seedDemo(db);
+      javascript
+Copy
+if (process.env.NODE_ENV !== 'production') {
+  await seedDemo(db);
+}
       const mod = db.prepare('SELECT id FROM users WHERE email=?').get(modEmail);
       for (const month of ['2026-06', '2026-07', '2026-08', '2026-09']) {
         if (!db.prepare('SELECT id FROM statements WHERE accountId=? AND month=?').get(custAccount.id, month)) {
