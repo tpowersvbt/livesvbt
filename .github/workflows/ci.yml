@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [tpowersvbt-powers-superhand]
+    branches: [main]
   pull_request:
-    branches: [tpowersvbt-powers-superhand]
+    branches: [main]
 
 permissions:
   contents: read
