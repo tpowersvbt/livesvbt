@@ -1,21 +1,21 @@
 # Silicon Valley Bank and Trust - Build Report
 
-**Build Date:** October 2, 2026
+**Build Date:** October 2, 2026  
 **Status:** ✅ **BUILD SUCCESSFUL**
 
 ## Build Summary
 
-The Silicon Valley Bank and Trust (SVBT) local banking application has been successfully built and verified. This is a complete React 19 + Vite + Three.js + Node.js 24 + Express 5 banking platform with native SQLite, scrypt authentication, and PDFKit statement generation.
+The Silicon Valley Bank and Trust (SVBT) local banking application has been successfully built and verified. This is a complete React 19 + Vite + Three.js + Node.js 24 + Express 5 banking demonstration platform with native SQLite, scrypt authentication, and PDFKit statement generation.
 
 ## Build Steps Completed
 
 ### 1. Environment Setup ✅
 - Created `.env` file from `.env.example`
 - Configured development environment with localhost origin
-- Set up credentials for testing
+- Set up demo credentials for testing
 
 ### 2. Database Initialization ✅
-- Seeded SQLite database with data
+- Seeded SQLite database with demonstration data
 - Created customer account: Bakhtiari Auto Group, LLC
 - Generated 4 months of transaction history (June-September 2026)
 - Verified exact ending balances:
@@ -44,7 +44,7 @@ The Silicon Valley Bank and Trust (SVBT) local banking application has been succ
 5. ✅ Rate limiting is server-enforced
 6. ✅ Authentication memory capacity is shared across apps and released after completion
 7. ✅ Production fails closed and unseeded databases have no default users
-8. ✅ Persistent startup is idempotent and concurrent statement issuance is serialized
+8. ✅ Persistent demo startup is idempotent and concurrent statement issuance is serialized
 9. ✅ PDF content verification tests
 10. ✅ Additional banking logic tests
 
@@ -63,7 +63,7 @@ Production-ready files in `dist/`:
 - tim-power.jpg (Tim Power portrait, 7.9 KB)
 - assets/ (JavaScript bundles, CSS, fonts)
 
-## Login Credentials
+## Demo Login Credentials
 
 ### Customer Access
 - **Email:** sales@bakhtiariautogroup.com
@@ -75,7 +75,7 @@ Production-ready files in `dist/`:
 - **Password:** ModeratorGod!2026
 - **Access via:** "Moderator access" in footer
 
-⚠️ **Note:** Change these credentials before deployment.
+⚠️ **Note:** These are public local-demo credentials only. Change before any production deployment.
 
 ## Known Issues & Considerations
 
@@ -123,7 +123,7 @@ npm run seed
 Before deploying to production:
 
 - [ ] Set `NODE_ENV=production`
-- [ ] Ensure the database seeding flag is disabled
+- [ ] Set `DEMO_SEED=false`
 - [ ] Use fresh DB_PATH (never deploy seeded databases)
 - [ ] Generate secure moderator credentials with `create-moderator` script
 - [ ] Configure HTTPS with valid certificates
@@ -157,7 +157,7 @@ Before deploying to production:
 ✅ SQL injection prevention (prepared statements)  
 ✅ Immutable ledger (no delete/update of transactions)  
 ✅ Audit logging  
-✅ Customer data isolation
+✅ Customer data isolation  
 
 ## Project Structure
 

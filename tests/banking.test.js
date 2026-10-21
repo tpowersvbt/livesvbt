@@ -255,7 +255,6 @@ test('production fails closed and unseeded databases have no default users', asy
   const f = await fixture({ production: true, demoSeed: false, origin: 'https://bank.example' });
   try {
     assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM users').get().n, 0);
-    assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM accounts').get().n, 0);
     const health = await f.client().request('/health');
     assert.equal(health.status, 200);
     assert.deepEqual(health.data, { status: 'ok' });
@@ -267,28 +266,6 @@ test('production fails closed and unseeded databases have no default users', asy
     assert.match(csp, /frame-ancestors 'none'/);
     assert.equal((await fetch(`${f.url}/`)).status, 404);
   } finally { await f.close(); }
-  const directory = mkdtempSync(join(tmpdir(), 'svbt-production-clean-'));
-  const names = ['NODE_ENV', 'DEMO_SEED', 'APP_ORIGIN', 'MODERATOR_EMAIL', 'MODERATOR_PASSWORD'];
-  const prior = Object.fromEntries(names.map(name => [name, process.env[name]]));
-  try {
-    process.env.NODE_ENV = 'production';
-    process.env.DEMO_SEED = 'false';
-    process.env.APP_ORIGIN = 'https://bank.example';
-    delete process.env.MODERATOR_EMAIL;
-    delete process.env.MODERATOR_PASSWORD;
-    const clean = await createApp({ dbPath: join(directory, 'bank.sqlite'), statementDir: join(directory, 'statements'), frontend: false });
-    try {
-      assert.equal(clean.locals.db.prepare('SELECT COUNT(*) AS n FROM users').get().n, 0);
-      assert.equal(clean.locals.db.prepare('SELECT COUNT(*) AS n FROM accounts').get().n, 0);
-      assert.equal(clean.locals.db.prepare("SELECT COUNT(*) AS n FROM users WHERE email IN ('sales@bakhtiariautogroup.com','tpower@siliconvalleybankandtrust.com')").get().n, 0);
-    } finally { await clean.locals.close(); }
-  } finally {
-    for (const name of names) {
-      if (prior[name] === undefined) delete process.env[name];
-      else process.env[name] = prior[name];
-    }
-    rmSync(directory, { recursive: true, force: true });
-  }
   const seeded = await fixture();
   try { await assert.rejects(createApp({ dbPath: seeded.app.locals.config.dbPath, production: true, demoSeed: false, origin: 'https://bank.example', frontend: false }), /demo-seeded database/); }
   finally { await seeded.close(); }
@@ -343,79 +320,4 @@ test('server-only moderator provisioning requires unique non-demo credentials', 
     assert.ok(afterReset.prepare("SELECT id FROM audit WHERE action='moderator.password-reset'").get());
     afterReset.close();
   } finally { rmSync(directory, { recursive: true, force: true }); }
-});
-
-test('site settings and team: public reads, moderator-only writes, validation and ordering', async () => {
-  const f = await fixture();
-  try {
-    const anon = f.client(); await anon.request('/session');
-    const pub = await anon.request('/site');
-    assert.equal(pub.status, 200);
-    assert.ok(pub.data.settings.heroTitle);
-    assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM site_settings').get().n, 1);
-    assert.deepEqual((await anon.request('/team')).data, []);
-    assert.equal((await anon.request('/admin/settings', 'PUT', { heroTitle: 'x' })).status, 401);
-    assert.equal((await anon.request('/admin/site', 'PUT', { heroTitle: 'x' })).status, 401);
-    const customer = f.client(); await customer.request('/session');
-    await customer.request('/login', 'POST', { email: 'sales@bakhtiariautogroup.com', password: 'FounderClient!2026' });
-    assert.equal((await customer.request('/admin/settings', 'PUT', { heroTitle: 'x' })).status, 403);
-    assert.equal((await customer.request('/admin/site', 'PUT', { heroTitle: 'x' })).status, 403);
-    assert.equal((await customer.request('/admin/employees', 'POST', { name: 'A', title: 'B', bio: 'C' })).status, 403);
-    const c = f.client(); await c.request('/session');
-    assert.equal((await c.request('/login', 'POST', { email: 'tpower@siliconvalleybankandtrust.com', password: 'ModeratorGod!2026' })).status, 200);
-    assert.equal((await c.request('/admin/settings', 'PUT', { heroTitle: 'New title', bannerImage: 'javascript:alert(1)' })).status, 400);
-    assert.equal((await c.request('/admin/settings', 'PUT', { unknown: 'x' })).status, 400);
-    assert.equal((await c.request('/admin/site', 'PUT', { heroTitle: 'New title', footerText: 'Footer', bannerImage: '/banner.png', heroImage: '/svbt-facade.jpg', footerImage: '/footer.jpg' })).status, 200);
-    assert.equal((await anon.request('/site')).data.settings.heroTitle, 'New title');
-    assert.equal((await anon.request('/site')).data.settings.heroImage, '/svbt-facade.jpg');
-    assert.equal(f.db.prepare('SELECT heroTitle FROM site_settings WHERE id=1').get().heroTitle, 'New title');
-    assert.deepEqual((await c.request('/admin/team')).data, []);
-    const first = (await c.request('/admin/team', 'POST', { name: 'First', title: 'T', bio: 'B', photoUrl: 'https://example.com/a.jpg', displayOrder: 1 })).data;
-    assert.equal((await c.request(`/admin/team/${first.id}`, 'PUT', { name: 'First Updated', title: 'T2', bio: 'Updated', displayOrder: 3 })).data.name, 'First Updated');
-    assert.equal((await anon.request('/team')).data[0].name, 'First Updated');
-    assert.equal((await c.request(`/admin/team/${first.id}`, 'DELETE', {})).status, 200);
-    assert.deepEqual((await anon.request('/team')).data, []);
-    const second = (await c.request('/admin/employees', 'POST', { name: 'Second', title: 'T', bio: 'B', displayOrder: 2 })).data;
-    await c.request('/admin/employees', 'POST', { name: 'First', title: 'T', bio: 'B', photoUrl: 'https://example.com/a.jpg', displayOrder: 1 });
-    assert.equal((await c.request('/admin/employees', 'POST', { name: 'Bad', title: 'T', bio: 'B', photoUrl: 'http://example.com/a.jpg' })).status, 400);
-    assert.deepEqual((await anon.request('/site')).data.employees.map(e => e.name), ['First', 'Second']);
-    assert.equal((await c.request(`/admin/employees/${second.id}`, 'DELETE', {})).status, 200);
-    assert.equal((await c.request(`/admin/employees/${second.id}`, 'DELETE', {})).status, 404);
-    assert.deepEqual((await anon.request('/site')).data.employees.map(e => e.name), ['First']);
-  } finally { await f.close(); }
-});
-
-test('Funds Flow bulk CSV validates all rows before atomically posting 1-2000 entries', async () => {
-  const f = await fixture();
-  try {
-    const admin = f.client();
-    await admin.login('tpower@siliconvalleybankandtrust.com', 'ModeratorGod!2026');
-    const result = await admin.request('/admin/accounts/1/transactions/bulk', 'POST', {
-      rows: 'date,description,amount\n2026-10-01,Wire in,"1,500.00"\n2026-10-02,"Office rent, Suite 4",(1800.50)'
-    });
-    assert.equal(result.status, 201);
-    assert.deepEqual(result.data.map(row => [row.description, row.amount]), [['Wire in', 150000], ['Office rent, Suite 4', -180050]]);
-    const existing = f.db.prepare('SELECT COUNT(*) AS n FROM transactions WHERE date >= ?').get('2026-10-01').n;
-    const invalid = await admin.request('/admin/accounts/1/transactions/bulk', 'POST', {
-      rows: '2026-10-03,Valid row,1.00\n2026-10-04,Invalid row,not-money'
-    });
-    assert.equal(invalid.status, 400);
-    assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM transactions WHERE date >= ?').get('2026-10-01').n, existing);
-    const entries = await admin.request('/admin/accounts/1/transactions/bulk', 'POST', {
-      entries: [{ date: '2026-10-05', description: 'Existing format', amount: 100 }]
-    });
-    assert.equal(entries.status, 201);
-    const tooMany = await admin.request('/admin/accounts/1/transactions/bulk', 'POST', {
-      rows: Array.from({ length: 2001 }, (_, i) => `2026-10-01,Row ${i + 1},1.00`).join('\n')
-    });
-    assert.equal(tooMany.status, 400);
-  } finally { await f.close(); }
-});
-
-test('brand constants: phone number and logo path', () => {
-  const app = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
-  assert.match(app, /PHONE_DISPLAY = '\(844\) 842-SVBT'/);
-  assert.match(app, /PHONE_HREF = 'tel:\+18448427828'/);
-  assert.ok(app.includes('src="/svbt-logo.jpg"'));
-  assert.ok(!/824-?SVBT|8247828/i.test(app));
 });

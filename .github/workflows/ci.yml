@@ -1,18 +1,29 @@
 name: CI
+
 on:
   push:
+    branches: [tpowersvbt-powers-superhand]
   pull_request:
+    branches: [tpowersvbt-powers-superhand]
+
 permissions:
   contents: read
+
 jobs:
-  verify:
+  build:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: SVBT
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version-file: SVBT/package.json
           cache: npm
+          cache-dependency-path: SVBT/package-lock.json
+
       - run: npm ci
       - run: npm run lint
       - run: npm test

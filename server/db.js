@@ -40,10 +40,6 @@ export function openDatabase(path) {
     CREATE TABLE IF NOT EXISTS statements(id INTEGER PRIMARY KEY, accountId INTEGER NOT NULL REFERENCES accounts(id), month TEXT NOT NULL, revision INTEGER NOT NULL, issuedAt TEXT NOT NULL, closing INTEGER NOT NULL, snapshot TEXT NOT NULL, hash TEXT NOT NULL, pdf BLOB NOT NULL, pdfHash TEXT NOT NULL, archivePath TEXT NOT NULL, UNIQUE(accountId,month,revision));
     CREATE TABLE IF NOT EXISTS investments(id INTEGER PRIMARY KEY, sector TEXT NOT NULL, status TEXT NOT NULL, targetCapital INTEGER NOT NULL CHECK(typeof(targetCapital)='integer' AND targetCapital>=0 AND targetCapital<=100000000000), risk TEXT NOT NULL, strategy TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY, actorId INTEGER REFERENCES users(id), action TEXT NOT NULL, entity TEXT NOT NULL, details TEXT NOT NULL, createdAt TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')));
-    CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);
-    CREATE TABLE IF NOT EXISTS employees(id INTEGER PRIMARY KEY, name TEXT NOT NULL, title TEXT NOT NULL, photoUrl TEXT NOT NULL DEFAULT '', bio TEXT NOT NULL, displayOrder INTEGER NOT NULL DEFAULT 0);
-    CREATE TABLE IF NOT EXISTS site_settings(id INTEGER PRIMARY KEY CHECK(id=1), bannerText TEXT NOT NULL, bannerImage TEXT NOT NULL DEFAULT '', footerText TEXT NOT NULL, footerImage TEXT NOT NULL DEFAULT '', heroTitle TEXT NOT NULL, heroSubtitle TEXT NOT NULL, heroImage TEXT NOT NULL DEFAULT '/svbt-facade.jpg');
-    CREATE TABLE IF NOT EXISTS team_members(id INTEGER PRIMARY KEY, name TEXT NOT NULL, title TEXT NOT NULL, photoUrl TEXT NOT NULL DEFAULT '', bio TEXT NOT NULL, displayOrder INTEGER NOT NULL DEFAULT 0);
     CREATE TABLE IF NOT EXISTS metadata(key TEXT PRIMARY KEY, value TEXT NOT NULL);
     CREATE TRIGGER IF NOT EXISTS valid_reversal BEFORE INSERT ON transactions WHEN NEW.reversalOf IS NOT NULL BEGIN
       SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM transactions WHERE id=NEW.reversalOf AND accountId=NEW.accountId AND amount=-NEW.amount AND reversalOf IS NULL AND date<=NEW.date) THEN RAISE(ABORT,'Invalid reversal') END;
@@ -60,9 +56,9 @@ export async function seedDemo(db) {
   const moderatorHash = await hashPassword(demoCredentials.moderator[1]);
   atomic(db, () => {
     if (db.prepare("SELECT value FROM metadata WHERE key='demo-seeded'").get()) return;
-    const existingCustomer = db.prepare('SELECT id FROM users WHERE email=?').get(demoCredentials.customer[0]); const customer = existingCustomer ? existingCustomer.id : Number(db.prepare('INSERT INTO users(email,name,address,role,passwordHash) VALUES (?,?,?,?,?)').run(demoCredentials.customer[0], 'Bakhtiari Auto Group, LLC', '3155 Stevens Creek, San Jose, CA 95117', 'customer', customerHash).lastInsertRowid);
-    const existingModerator = db.prepare('SELECT id FROM users WHERE email=?').get(demoCredentials.moderator[0]); const moderator = existingModerator ? existingModerator.id : Number(db.prepare('INSERT INTO users(email,name,address,role,passwordHash) VALUES (?,?,?,?,?)').run(demoCredentials.moderator[0], 'Timothy Powers', 'Silicon Valley, California', 'moderator', moderatorHash).lastInsertRowid);
-    const existingAccount = db.prepare('SELECT id FROM accounts WHERE userId=?').get(customer); const accountId = existingAccount ? existingAccount.id : newAccount(db, customer, 'Bakhtiari Auto Group, LLC', '3155 Stevens Creek, San Jose, CA 95117');
+    const customer = Number(db.prepare('INSERT INTO users(email,name,address,role,passwordHash) VALUES (?,?,?,?,?)').run(demoCredentials.customer[0], 'Bakhtiari Auto Group, LLC', '3155 Stevens Creek, San Jose, CA 95117', 'customer', customerHash).lastInsertRowid);
+    const moderator = Number(db.prepare('INSERT INTO users(email,name,address,role,passwordHash) VALUES (?,?,?,?,?)').run(demoCredentials.moderator[0], 'Timothy Powers', 'Silicon Valley, California', 'moderator', moderatorHash).lastInsertRowid);
+    const accountId = newAccount(db, customer, 'Bakhtiari Auto Group, LLC', '3155 Stevens Creek, San Jose, CA 95117');
     const descriptions = ['Cloud infrastructure', 'Software subscriptions', 'Office rent', 'Internet and communications', 'Business insurance', 'Accounting services', 'Digital marketing', 'Contract engineering', 'Office supplies', 'Security monitoring', 'Technology hardware', 'Business travel'];
     const base = [65000, 32000, 180000, 18000, 28000, 45000, 50000, 60000, 12000, 22000, 35000, 29700];
     const insert = db.prepare('INSERT INTO transactions(accountId,date,description,amount,actorId) VALUES (?,?,?,?,?)');

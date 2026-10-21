@@ -19,8 +19,6 @@
   "dependencies": {
     "@fontsource/manrope": "^5.2.0",
     "@fontsource/space-grotesk": "^5.2.0",
-    "better-sqlite3": "^11.7.0",
-    "cors": "^2.8.5",
     "dotenv": "^17.2.0",
     "express": "^5.1.0",
     "pdfkit": "^0.17.2",

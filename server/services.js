@@ -2,7 +2,6 @@ import { createHash, randomBytes } from 'node:crypto';
 import { mkdirSync, writeFileSync, readFileSync, renameSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { atomic, audit } from './db.js';
-import { parseFundsRows } from './funds-parse.js';
 import { renderStatement } from './pdf.js';
 
 export const digest = value => createHash('sha256').update(value).digest('hex');
@@ -61,28 +60,7 @@ export function postTransaction(db, id, values, actorId) {
     return db.prepare('SELECT * FROM transactions WHERE id=?').get(transactionId);
   });
 }
-export function postTransactionsBulk(db, id, values, actorId) {
-  account(db, id);
-  if (!values || typeof values !== 'object' || Array.isArray(values)) fail(400, 'Provide an entries array or CSV rows.');
-  let entries;
-  if (Array.isArray(values.entries) && values.rows === undefined) entries = values.entries;
-  else if (typeof values.rows === 'string' && values.entries === undefined) {
-    try { entries = parseFundsRows(values.rows); } catch (error) { fail(400, error.message); }
-  } else fail(400, 'Provide either an entries array or CSV rows.');
-  if (!Array.isArray(entries) || entries.length < 1 || entries.length > 2000) fail(400, 'Provide 1-2000 transaction rows.');
-  const rows = entries.map(entry => {
-    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) fail(400, 'Each transaction row must be an object.');
-    return { date: date(entry.date), description: text(entry.description, 'Description', 300), amount: cents(entry.amount) };
-  });
-  return atomic(db, () => {
-    const ids = [];
-    const insert = db.prepare('INSERT INTO transactions(accountId,date,description,amount,actorId) VALUES (?,?,?,?,?)');
-    for (const row of rows) ids.push(Number(insert.run(id, row.date, row.description, row.amount, actorId).lastInsertRowid));
-    accountData(db, id);
-    audit(db, actorId, 'transaction.bulkPost', ids[0], { accountId: id, count: ids.length, total: rows.reduce((sum, row) => sum + row.amount, 0) });
-    return ids.map(transactionId => db.prepare('SELECT * FROM transactions WHERE id=?').get(transactionId));
-  });
-} export function reverseTransaction(db, id, values, actorId) {
+export function reverseTransaction(db, id, values, actorId) {
   const ledgerDate = date(values.date), reason = text(values.reason, 'Reversal reason', 250);
   return atomic(db, () => {
     const original = db.prepare('SELECT * FROM transactions WHERE id=?').get(id);
