@@ -1,6 +1,6 @@
 import PDFDocument from 'pdfkit';
 import { fileURLToPath } from 'node:url';
-const logo = fileURLToPath(new URL('../public/svbt-logo.jpg', import.meta.url));
+const logo = fileURLToPath(new URL('../public/svbt-logo.png', import.meta.url));
 
 export const demoNotice = 'SAMPLE: demonstration only. Not a bank statement and not a record of funds held.';
 const money = value => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value / 100);
