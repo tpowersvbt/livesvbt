@@ -14,7 +14,9 @@
     "create-moderator": "node server/create-moderator.js",
     "test": "node --test tests/*.test.js",
     "test:ui": "playwright test",
-    "lint": "eslint src server tests vite.config.js"
+    "lint": "eslint src server tests vite.config.js",
+    "backup": "node server/backup.js",
+    "start:restore": "node server/restore-bootstrap.js"
   },
   "dependencies": {
     "@fontsource/manrope": "^5.2.0",

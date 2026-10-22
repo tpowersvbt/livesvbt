@@ -1,0 +1,61 @@
+SVBT PAID SERVICE RELEASE
+
+Confirmed destination: https://github.com/tpowersvbt/livesvbt, main.
+Render: srv-db9p6mcs728c73chbbag, https://svbt-zkkw.onrender.com.
+Existing paid compute and 1 GB /var/data disk are reused. No new service.
+
+This review branch starts at livesvbt/main 57e7febaceefd3f41c9d7bb3581670c8b2f1a281.
+It ports the reviewed root application updates into livesvbt. Existing nested
+SVBT sources, repository settings, render.yaml and other .github files remain.
+CI now tests the root application actually used by the service.
+
+Included: supplied original logo, supplied 3003 Tasman Drive address, atomic
+internal and batch transfers, legacy bulk ledger posting, owner/admin editing,
+customer onboarding, immutable transaction audits, ledger-derived statements,
+safe backups/restores and production storage guards. No external settlement or
+protected Overseer compatibility is claimed or configured by this release.
+
+The original runtime database is outside the persistent disk. A second, distinct
+database already exists on /var/data. Both were preserved using native SQLite
+online backups under /var/data/release-backups/pre-base-20261021-QRWCQC.
+Both copies passed integrity and foreign-key checks. Six statement files were
+also copied. Neither original was overwritten or deleted. The preserved copies
+stay in this existing Render service; no customer database was downloaded.
+
+Real base cutover configuration (save without deploying until review completes):
+  NODE_ENV=production
+  APP_ORIGIN=https://svbt-zkkw.onrender.com
+  TRUST_PROXY=true
+  HOST=0.0.0.0
+  STORAGE_ROOT=/var/data
+  DB_PATH=/var/data/svbt-base-20261021/bank.sqlite
+  STATEMENT_DIR=/var/data/svbt-base-20261021/statements
+  DEMO_SEED=false
+  SAMPLE_DATA=false
+  SVBT_INITIALIZE_EMPTY=true
+  Build: npm ci && npm run build
+  Start: node server/initialize-installation.js
+  Health: /api/health
+
+Keep existing unrelated secrets and integrations. MODERATOR_EMAIL must identify
+Tim; MODERATOR_PASSWORD must be privately set to an unpublished 12+ character
+password. No password is included in this repository. The existing configured
+password failed the suitability check, without its value being disclosed.
+
+Startup creates a separate empty database only when absent and explicitly
+enabled. It refuses to overwrite any existing database and verifies durable
+paths use the mounted volume. No sample customers, balances or transactions
+are generated. Existing databases remain archived for later reviewed migration.
+Tim's configured staff account is promoted to owner by the existing handover.
+
+Keep the service linked to livesvbt/main. Review and explicit main-merge approval
+precede a release from main. Disable accidental automatic deployments during
+cutover. A disk-backed deploy causes a short service interruption.
+Verify the exact live commit, health, logo/address, persistent paths, absence of
+demo ledger data and owner access. Do not invent production financial activity.
+
+Local validation: clean npm ci, lint and production build passed. All 48 banking,
+administration, backup/restore and regression tests passed, as did both separate
+installation tests (50 total). All six desktop/mobile browser checks passed,
+including atomic batch failure/success, owner workspace, statements and logo.
+The supplied original JPEG SHA-256 matches the root public asset exactly.
