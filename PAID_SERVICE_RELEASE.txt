@@ -55,8 +55,8 @@ cutover. A disk-backed deploy causes a short service interruption.
 Verify the exact live commit, health, logo/address, persistent paths, absence of
 demo ledger data and owner access. Do not invent production financial activity.
 
-Local validation: clean npm ci, lint and production build passed. All 48 banking,
-administration, backup/restore and regression tests passed, as did both separate
-installation tests (50 total). All six desktop/mobile browser checks passed,
+Local validation: clean npm ci, lint and production build passed. All 52 server
+tests passed, including banking, administration, backup/restore, installation
+and private-owner-password regression coverage. All six browser checks passed,
 including atomic batch failure/success, owner workspace, statements and logo.
 The supplied original JPEG SHA-256 matches the root public asset exactly.
