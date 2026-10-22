@@ -3,25 +3,36 @@ services:
     name: svbt
     runtime: node
     region: oregon
-    plan: free
+    plan: starter
     buildCommand: npm ci && npm run build
     startCommand: NODE_ENV=production npm start
+    healthCheckPath: /api/health
+    disk:
+      name: svbt-data
+      mountPath: /var/data
+      sizeGB: 1
     envVars:
       - key: APP_ORIGIN
-        value: https://siliconvalleybankandtrust.com
-      - key: PORT
-        value: 3000
+        sync: false
       - key: HOST
         value: 0.0.0.0
       - key: DB_PATH
-        value: ./data/bank.sqlite
+        value: /var/data/bank.sqlite
       - key: STATEMENT_DIR
-        value: ./monthly/statements
+        value: /var/data/statements
       - key: TRUST_PROXY
         value: true
       - key: DEMO_SEED
         value: false
-      - key: DEMO_MODERATOR_EMAIL
-        value: tpower@siliconvalleybankandtrust.com
-      - key: DEMO_MODERATOR_PASSWORD
-        value: svbt2026!
+      - key: SAMPLE_DATA
+        value: true
+      # Staff bootstrap. Never put a password in this file. Set MODERATOR_EMAIL and
+      # MODERATOR_PASSWORD (12+ characters, not a published demo password) in the
+      # Render dashboard under Environment. To create an owner instead of a
+      # moderator, also set MODERATOR_ROLE=owner, then run `npm run create-moderator`
+      # from the service shell. DEMO_SEED must stay false; the server refuses to
+      # start in production with it on.
+      - key: MODERATOR_EMAIL
+        sync: false
+      - key: MODERATOR_PASSWORD
+        sync: false
