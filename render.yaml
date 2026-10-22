@@ -1,16 +1,17 @@
 services:
   - type: web
-    name: svbt
+    name: Final
     runtime: node
     region: oregon
-    plan: free
+    plan: 0.5c-512mb
+    branch: main   
     buildCommand: npm ci && npm run build
     startCommand: NODE_ENV=production npm start
     envVars:
       - key: APP_ORIGIN
-        value: https://siliconvalleybankandtrust.com
+        value: https://svbt-zkkw.onrender.com
       - key: PORT
-        value: 3000
+        value: 10000
       - key: HOST
         value: 0.0.0.0
       - key: DB_PATH
@@ -19,9 +20,7 @@ services:
         value: ./monthly/statements
       - key: TRUST_PROXY
         value: true
-      - key: DEMO_SEED
-        value: false
-      - key: DEMO_MODERATOR_EMAIL
+      - key: MODERATOR_EMAIL
         value: tpower@siliconvalleybankandtrust.com
       - key: DEMO_MODERATOR_PASSWORD
-        value: svbt2026!
+        value: LetsGetGoing2026$
