@@ -10,11 +10,11 @@
 
 
 /* SVBT supplied identity and architectural backdrop */
-body { background: #07111e url('/brand/svbt-building.jpg') center center / cover fixed no-repeat; }
+
 .brand-logo { width: 112px; height: 88px; object-fit: contain; display: block; }
 .workspace-logo { width: 150px; height: 135px; object-fit: contain; margin-bottom: 16px; }
 .fallback-logo { width: min(85%, 390px); height: auto; object-fit: contain; }
-.hero, .intro, .sectors, .principles, .contact-section, footer, .workspace-main { background: rgba(7,17,30,.85); }
+.hero, .intro, .sectors, .principles, .contact-section, footer, .workspace-main { background: transparent; }
 .site-header, header, .workspace-sidebar { background: rgba(7,17,30,.94); }
 .hero-visual { background: transparent; }
 .hero .scene-wrap { background: radial-gradient(ellipse, rgba(7,17,30,.15), transparent 72%); }
@@ -22,8 +22,8 @@ body { background: #07111e url('/brand/svbt-building.jpg') center center / cover
 @media(max-width: 700px) { body { background-attachment: scroll; } .brand-logo { width: 90px; height: 72px; } }
 @media print { body, .panel, .workspace-main { background: white !important; color: black; } }
 body { position: relative; isolation: isolate; background: #07111e; }
-body::before { content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none; background: #07111e url('/brand/svbt-building.jpg') center / cover no-repeat; }
-.section, .focus-strip, .cta { background: rgba(7,17,30,.85); }
+body::before { content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none; background: url('/brand/svbt-building.jpg') center / cover no-repeat; opacity: .2; }
+.section, .focus-strip, .cta { background: transparent; }
 .hero .scene-controls { bottom: 0; }
 @media print { body::before { display: none; } }
 
@@ -60,3 +60,5 @@ input,textarea,select{background:var(--input-background,#091522);color:var(--inp
 
 /* Keep the supplied detailed brand mark legible at both breakpoints. */
 .site-header .brand-logo{width:144px;height:144px}.site-footer .brand-logo{width:180px;height:180px}@media(max-width:700px){.site-header .brand-logo{width:104px;height:104px}}
+
+@media print { body::before { display: none; } }

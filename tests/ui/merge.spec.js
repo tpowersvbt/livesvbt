@@ -3,7 +3,7 @@ import { test, expect } from '@playwright/test';
 test('supplied logo is visible in header and footer on desktop and mobile',async({page})=>{
   await page.goto('/');
   const logo=page.locator('.site-header img.brand-logo');
-  await expect(logo).toHaveAttribute('src','/svbt-logo.jpg');
+  await expect(logo).toHaveAttribute('src','/svbt-logo.png');
   await expect(logo).toBeVisible();
   expect(await logo.evaluate(img=>img.complete&&img.naturalWidth>0)).toBe(true);
   await page.screenshot({path:'../../outputs/svbt-desktop.png',fullPage:true});
@@ -11,7 +11,7 @@ test('supplied logo is visible in header and footer on desktop and mobile',async
   await expect(logo).toBeVisible();
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
   await page.screenshot({path:'../../outputs/svbt-mobile.png',fullPage:true});
-  await expect(page.locator('.site-footer img.brand-logo')).toHaveAttribute('src','/svbt-logo.jpg');
+  await expect(page.locator('.site-footer img.brand-logo')).toHaveAttribute('src','/svbt-logo.png');
 });
 
 test('batch transfer form rolls back invalid recipients and completes a reviewed PIN-protected batch',async({page,playwright})=>{
