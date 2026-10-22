@@ -6,9 +6,12 @@ import { dirname } from 'node:path';
 
 const derive = promisify(scrypt);
 export const demoCredentials = { customer: [process.env.DEMO_CUSTOMER_EMAIL || 'sales@bakhtiariautogroup.com', process.env.DEMO_CUSTOMER_PASSWORD || 'FounderClient!2026'], moderator: [process.env.DEMO_MODERATOR_EMAIL || 'tpower@siliconvalleybankandtrust.com', process.env.DEMO_MODERATOR_PASSWORD || 'ModeratorGod!2026'] };
-// Passwords that have been published in this repository, its history or its guides. They are
-// local-demo values only and are refused for real accounts.
-export const publicPasswords = new Set(['FounderClient!2026', 'ModeratorGod!2026', 'svbt2026!', 'YourSecurePassword123!@#', 'YourSecurePassword!2026', ...Object.values(demoCredentials).map(([, value]) => value)]);
+// Published repository passwords are always refused for real accounts. Custom
+// demo passwords are additionally blocked when demonstration mode is enabled.
+// A private legacy DEMO_* alias is not evidence of publication in an unseeded
+// production installation, where no demonstration accounts are provisioned.
+const demonstrationMode = process.env.NODE_ENV !== 'production' || process.env.DEMO_SEED === 'true' || process.env.SAMPLE_DATA === 'true';
+export const publicPasswords = new Set(['FounderClient!2026', 'ModeratorGod!2026', 'svbt2026!', 'YourSecurePassword123!@#', 'YourSecurePassword!2026', ...(demonstrationMode ? Object.values(demoCredentials).map(([, value]) => value) : [])]);
 export async function hashPassword(password) {
   const salt = randomBytes(32).toString('hex');
   const hash = await derive(password, salt, 64, { N: 131072, r: 8, p: 1, maxmem: 256 * 1024 * 1024 });

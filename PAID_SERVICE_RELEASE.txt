@@ -40,7 +40,8 @@ Real base cutover configuration (save without deploying until review completes):
 Keep existing unrelated secrets and integrations. MODERATOR_EMAIL must identify
 Tim; MODERATOR_PASSWORD must be privately set to an unpublished 12+ character
 password. No password is included in this repository. The existing configured
-password failed the suitability check, without its value being disclosed.
+password passes length and published-password checks. A private legacy DEMO_*
+alias is preserved without enabling sample data or treating it as published.
 
 Startup creates a separate empty database only when absent and explicitly
 enabled. It refuses to overwrite any existing database and verifies durable
