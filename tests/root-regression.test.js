@@ -112,6 +112,6 @@ test('brand constants: phone number and logo path', () => {
   const app = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
   assert.match(app, /PHONE_DISPLAY = '\(844\) 842-SVBT'/);
   assert.match(app, /PHONE_HREF = 'tel:\+18448427828'/);
-  assert.ok(app.includes('src="/svbt-logo.jpg"'));
+  assert.ok(app.includes('src="/svbt-logo.png"'));
   assert.ok(!/824-?SVBT|8247828/i.test(app));
 });
