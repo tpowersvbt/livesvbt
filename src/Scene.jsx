@@ -2,12 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-function polygon(points) {
-  const shape = new THREE.Shape();
-  points.forEach(([x, y], i) => i ? shape.lineTo(x, y) : shape.moveTo(x, y));
-  shape.closePath();
-  return shape;
-}
 function model(kind) {
   const group = new THREE.Group();
   const copper = new THREE.MeshStandardMaterial({ color: '#c48c69', metalness: 0.8, roughness: 0.28 });
@@ -15,21 +9,12 @@ function model(kind) {
   const ice = new THREE.MeshStandardMaterial({ color: '#b7e9f6', emissive: '#5cbed7', emissiveIntensity: 0.7, metalness: 0.4, roughness: 0.2 });
   const box = (x, y, z, w, h, d, material = navy) => { const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material); mesh.position.set(x, y, z); group.add(mesh); return mesh; };
   if (kind === 'brand') {
-    const letters = [
-      [[0,0],[0.9,0],[0.9,0.35],[0.3,0.35],[0.3,0.7],[0.9,0.7],[0.9,1.65],[0,1.65],[0,1.3],[0.6,1.3],[0.6,1.05],[0,1.05]],
-      [[0,1.65],[0.32,1.65],[0.55,0.4],[0.8,1.65],[1.12,1.65],[0.74,0],[0.36,0]],
-      [[0,0],[0.95,0],[1.1,0.22],[1.1,0.7],[0.9,0.86],[1.1,1.03],[1.1,1.43],[0.9,1.65],[0,1.65]],
-      [[0,1.65],[1.12,1.65],[1.12,1.32],[0.72,1.32],[0.72,0],[0.4,0],[0.4,1.32],[0,1.32]]
-    ];
-    letters.forEach((points, i) => {
-      const shape = polygon(points);
-      if (i === 2) { shape.holes.push(polygon([[0.3,0.3],[0.75,0.3],[0.75,0.63],[0.3,0.63]]), polygon([[0.3,1],[0.75,1],[0.75,1.34],[0.3,1.34]])); }
-      const mesh = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth: 0.38, bevelEnabled: true, bevelSize: 0.045, bevelThickness: 0.045, bevelSegments: 3, steps: 1 }), i === 1 ? ice : copper);
-      mesh.position.set(i * 1.25 - 2.4, -0.8, 0);
-      group.add(mesh);
-    });
-    for (let i = 0; i < 3; i++) { const ring = new THREE.Mesh(new THREE.TorusGeometry(3.05 + i * 0.32, 0.012, 8, 120), i === 1 ? ice : navy); ring.rotation.set(1.05 + i * 0.2, i * 0.6, 0.2); group.add(ring); }
-    group.rotation.set(0.12, -0.22, -0.08);
+    const texture = new THREE.TextureLoader().load('/svbt-logo.jpg', () => window.dispatchEvent(new Event('svbt-logo-loaded')));
+    texture.colorSpace = THREE.SRGBColorSpace;
+    const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, toneMapped: false, side: THREE.DoubleSide });
+    const emblem = new THREE.Mesh(new THREE.PlaneGeometry(6.6, 6.6), material);
+    group.add(emblem);
+    group.rotation.set(0, -0.12, 0);
   } else {
     box(0, -0.8, 0, 4.8, 0.2, 3.4, copper);
     if (kind === 'data') {
@@ -50,7 +35,7 @@ function model(kind) {
 export default function Scene({ kind = 'brand', label }) {
   const host = useRef(null);
   const engine = useRef(null);
-  const [paused, setPaused] = useState(() => matchMedia('(prefers-reduced-motion: reduce)').matches);
+  const [paused, setPaused] = useState(() => kind === 'brand' ? false : matchMedia('(prefers-reduced-motion: reduce)').matches);
   const [failed, setFailed] = useState(false);
   const pauseRef = useRef(paused);
   useEffect(() => { pauseRef.current = paused; engine.current?.sync(); }, [paused]);
@@ -66,23 +51,25 @@ export default function Scene({ kind = 'brand', label }) {
     const scene = new THREE.Scene();
     const object = model(kind); scene.add(object);
     const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
-    camera.position.set(kind === 'brand' ? 0.7 : 5, kind === 'brand' ? 2.4 : 4, kind === 'brand' ? 10.8 : 7);
+    camera.position.set(kind === 'brand' ? 0 : 5, kind === 'brand' ? 0 : 4, kind === 'brand' ? 10.8 : 7);
     const controls = new OrbitControls(camera, renderer.domElement);
+    if (kind === 'brand') { controls.minAzimuthAngle = -0.4; controls.maxAzimuthAngle = 0.4; controls.minPolarAngle = 1.3; controls.maxPolarAngle = 1.8; }
     controls.enableZoom = false; controls.enablePan = false; controls.enableDamping = false; controls.target.set(0, 0, 0); controls.update();
     scene.add(new THREE.HemisphereLight(0xb8e7ff, 0x172033, 2.8));
     const key = new THREE.DirectionalLight(0xffceaa, 5); key.position.set(2, 5, 5); scene.add(key);
     const rim = new THREE.DirectionalLight(0x8edbff, 4); rim.position.set(-4, 2, -3); scene.add(rim);
     let visible = false, frame = 0, last = 0, phase = 0, dirty = true;
     function draw() { if (visible && !document.hidden) renderer.render(scene, camera); }
-    function tick(time) { frame = 0; if (!visible || document.hidden || pauseRef.current) return; if (time - last >= 1000 / 30) { phase += 0.006; object.rotation.y += 0.002; key.position.x = Math.cos(phase) * 5; rim.intensity = 3.5 + Math.sin(phase) * 0.7; draw(); last = time; } frame = requestAnimationFrame(tick); }
+    function tick(time) { frame = 0; if (!visible || document.hidden || pauseRef.current) return; if (time - last >= 1000 / 30) { const delta = Math.min((time - last) / 1000, 0.1); phase += delta * (kind === 'brand' ? 0.55 : 0.18); if (kind === 'brand') { object.rotation.y = Math.sin(phase) * 0.6; object.rotation.x = Math.sin(phase * 0.6) * 0.08; } else object.rotation.y += delta * 0.06; key.position.x = Math.cos(phase) * 5; rim.intensity = 3.5 + Math.sin(phase) * 0.7; draw(); last = time; } frame = requestAnimationFrame(tick); }
     function sync() { cancelAnimationFrame(frame); frame = 0; if (visible && !document.hidden) { if (dirty || pauseRef.current) { draw(); dirty = false; } if (!pauseRef.current) frame = requestAnimationFrame(tick); } }
     engine.current = { sync, orbit: delta => { const offset = camera.position.clone().sub(controls.target); offset.applyAxisAngle(new THREE.Vector3(0, 1, 0), delta); camera.position.copy(offset.add(controls.target)); controls.update(); draw(); } };
     const observer = new IntersectionObserver(entries => { visible = entries[0].isIntersecting; dirty = true; sync(); }); observer.observe(container);
     const resize = new ResizeObserver(() => { const w = container.clientWidth, h = container.clientHeight; if (!w || !h) return; renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix(); dirty = true; sync(); }); resize.observe(container);
     const media = matchMedia('(prefers-reduced-motion: reduce)'); const change = () => { setPaused(media.matches); }; media.addEventListener('change', change);
+    window.addEventListener('svbt-logo-loaded', draw);
     controls.addEventListener('change', draw); document.addEventListener('visibilitychange', sync);
     const loss = e => { e.preventDefault(); pauseRef.current = true; setPaused(true); setFailed(true); cancelAnimationFrame(frame); }; renderer.domElement.addEventListener('webglcontextlost', loss);
-    return () => { engine.current = null; cancelAnimationFrame(frame); observer.disconnect(); resize.disconnect(); media.removeEventListener('change', change); document.removeEventListener('visibilitychange', sync); controls.dispose(); scene.traverse(o => { o.geometry?.dispose(); if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => m.dispose()); }); renderer.dispose(); renderer.domElement.remove(); };
+    return () => { window.removeEventListener('svbt-logo-loaded', draw); engine.current = null; cancelAnimationFrame(frame); observer.disconnect(); resize.disconnect(); media.removeEventListener('change', change); document.removeEventListener('visibilitychange', sync); controls.dispose(); scene.traverse(o => { o.geometry?.dispose(); if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => { m.map?.dispose(); m.dispose(); }); }); renderer.dispose(); renderer.domElement.remove(); };
   }, [kind]);
-  return <><div ref={host} className="scene-canvas" role="img" aria-label={label} />{failed && <div className="scene-fallback">{kind === 'brand' ? 'SVBT' : kind === 'data' ? 'INFRASTRUCTURE' : kind === 'homes' ? 'BUILD' : kind === 'reits' ? 'REAL ASSETS' : 'SEED'}<span>Spatial view unavailable · {label}</span></div>}<div className="scene-controls">{!failed && <><button aria-label="Orbit model left" onClick={() => engine.current?.orbit(-0.25)}>←</button><button aria-label="Orbit model right" onClick={() => engine.current?.orbit(0.25)}>→</button><button aria-pressed={paused} onClick={() => setPaused(!paused)}>{paused ? 'Play motion' : 'Pause motion'}</button><span>DRAG TO ORBIT</span></>}</div></>;
+  return <><div ref={host} className="scene-canvas" role="img" aria-label={label} />{failed && <div className="scene-fallback">{kind === 'brand' ? <img className="fallback-logo" src="/svbt-logo.jpg" alt="Silicon Valley Bank and Trust" /> : kind === 'data' ? 'INFRASTRUCTURE' : kind === 'homes' ? 'BUILD' : kind === 'reits' ? 'REAL ASSETS' : 'SEED'}<span>Spatial view unavailable · {label}</span></div>}<div className="scene-controls">{!failed && <><button aria-label="Orbit model left" onClick={() => engine.current?.orbit(-0.25)}>←</button><button aria-label="Orbit model right" onClick={() => engine.current?.orbit(0.25)}>→</button><button aria-pressed={paused} onClick={() => setPaused(!paused)}>{paused ? 'Play motion' : 'Pause motion'}</button><span>DRAG TO ORBIT</span></>}</div></>;
 }
