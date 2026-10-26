@@ -5,6 +5,7 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { openDatabase, seedDemo, demoCredentials, hashPassword, verifyPassword, atomic, audit, newAccount } from './db.js';
 import { digest, fail, text, accountData, postTransaction, reverseTransaction, preview, archive, statement, integrity, issueStatement, saveInvestment } from './services.js';
+import { migrate as migrateExternal, sentSummary as externalSummary, initiate as externalInitiate, queue as externalQueue, settle as externalSettle, refund as externalRefund, validRouting, ROUTING_ELECTRONIC, SETTLEMENT_PARTNER } from './external.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 let authenticationActive = 0;
@@ -51,50 +52,51 @@ export async function createApp(options = {}) {
   }
   
   const db = openDatabase(dbPath);
+  migrateExternal(db);
   let vite;
   try {
-    // Always provision demo accounts (whether DEMO_SEED is on or off) - works in production
-    const [modEmail, modPassword] = demoCredentials.moderator;
-    const [custEmail, custPassword] = demoCredentials.customer;
-    
-    // Create moderator if doesn't exist
-    if (!db.prepare('SELECT id FROM users WHERE email=?').get(modEmail)) {
-      console.log(`Provisioning moderator: ${modEmail}`);
-      const modHash = await hashPassword(modPassword);
-      db.prepare('INSERT INTO users(email,name,address,role,passwordHash) VALUES (?,?,?,?,?)').run(
-        modEmail, 'Timothy Powers', '123 Banking Street, Palo Alto, CA 94301', 'moderator', modHash
-      );
-      console.log('✓ Moderator account created');
-    }
-    
-    // Create customer if doesn't exist
-    let custUser = db.prepare('SELECT id FROM users WHERE email=?').get(custEmail);
-    if (!custUser) {
-      console.log(`Provisioning customer: ${custEmail}`);
-      const custHash = await hashPassword(custPassword);
-      const custId = Number(db.prepare('INSERT INTO users(email,name,address,role,passwordHash) VALUES (?,?,?,?,?)').run(
-        custEmail, 'Bakhtiari Auto Group', '456 Commerce Way, Los Angeles, CA 90001', 'customer', custHash
-      ).lastInsertRowid);
-      newAccount(db, custId, 'Bakhtiari Auto Group', '456 Commerce Way, Los Angeles, CA 90001');
-      custUser = db.prepare('SELECT id FROM users WHERE email=?').get(custEmail);
-      console.log('✓ Customer account created');
-    }
-    
-    // Seed demo transactions and statements if empty
-    const custAccount = db.prepare('SELECT id FROM accounts WHERE userId=?').get(custUser.id);
-    if (custAccount && !db.prepare('SELECT id FROM transactions WHERE accountId=?').get(custAccount.id)) {
-      console.log('Seeding demo transactions and statements...');
-    
-if (process.env.NODE_ENV !== 'production') {
-  await seedDemo(db);
-}
-      const mod = db.prepare('SELECT id FROM users WHERE email=?').get(modEmail);
-      for (const month of ['2026-06', '2026-07', '2026-08', '2026-09']) {
-        if (!db.prepare('SELECT id FROM statements WHERE accountId=? AND month=?').get(custAccount.id, month)) {
-          await issueStatement(db, custAccount.id, month, mod.id, config.statementDir);
-        }
+    // Provision the demonstration accounts only in demo mode. When demoSeed is off the
+    // database is expected to be empty (or managed externally), and a previously
+    // demo-seeded database is refused in production.
+    const demoSeeded = !!db.prepare("SELECT value FROM metadata WHERE key='demo-seeded'").get();
+    if (config.production && !config.demoSeed && demoSeeded) throw new Error('This is a demo-seeded database; production seeding is forbidden.');
+    if (config.demoSeed) {
+      const [modEmail, modPassword] = demoCredentials.moderator;
+      const [custEmail, custPassword] = demoCredentials.customer;
+
+      if (!db.prepare('SELECT id FROM users WHERE email=?').get(modEmail)) {
+        console.log(`Provisioning moderator: ${modEmail}`);
+        const modHash = await hashPassword(modPassword);
+        db.prepare('INSERT INTO users(email,name,address,role,passwordHash) VALUES (?,?,?,?,?)').run(
+          modEmail, 'Timothy Powers', '123 Banking Street, Palo Alto, CA 94301', 'moderator', modHash
+        );
+        console.log('Moderator account created');
       }
-      console.log('✓ Demo data seeded successfully');
+
+      let custUser = db.prepare('SELECT id FROM users WHERE email=?').get(custEmail);
+      if (!custUser) {
+        console.log(`Provisioning customer: ${custEmail}`);
+        const custHash = await hashPassword(custPassword);
+        const custId = Number(db.prepare('INSERT INTO users(email,name,address,role,passwordHash) VALUES (?,?,?,?,?)').run(
+          custEmail, 'Bakhtiari Auto Group, LLC', '3155 Stevens Creek, San Jose, CA 95117', 'customer', custHash
+        ).lastInsertRowid);
+        newAccount(db, custId, 'Bakhtiari Auto Group, LLC', '3155 Stevens Creek, San Jose, CA 95117');
+        custUser = db.prepare('SELECT id FROM users WHERE email=?').get(custEmail);
+        console.log('Customer account created');
+      }
+
+      const custAccount = db.prepare('SELECT id FROM accounts WHERE userId=?').get(custUser.id);
+      if (custAccount && !db.prepare('SELECT id FROM transactions WHERE accountId=?').get(custAccount.id)) {
+        console.log('Seeding demo transactions and statements...');
+        await seedDemo(db);
+        const mod = db.prepare('SELECT id FROM users WHERE email=?').get(modEmail);
+        for (const month of ['2026-06', '2026-07', '2026-08', '2026-09']) {
+          if (!db.prepare('SELECT id FROM statements WHERE accountId=? AND month=?').get(custAccount.id, month)) {
+            await issueStatement(db, custAccount.id, month, mod.id, config.statementDir);
+          }
+        }
+        console.log('Demo data seeded successfully');
+      }
     }
     const dummyHash = await hashPassword(randomBytes(32).toString('hex'));
     const app = express();
@@ -130,7 +132,7 @@ if (process.env.NODE_ENV !== 'production') {
       if (requestOrigin && !isOriginAllowed(requestOrigin)) {
         return next(Object.assign(new Error('Request origin is not allowed.'), { status: 403 }));
       }
-      if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) && requestOrigin && !isOriginAllowed(requestOrigin)) {
+      if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) && (!requestOrigin || !isOriginAllowed(requestOrigin))) {
         return next(Object.assign(new Error('An exact matching Origin is required for write requests.'), { status: 403 }));
       }
       if (req.get('sec-fetch-site') === 'cross-site') return next(Object.assign(new Error('Cross-site requests are forbidden.'), { status: 403 }));
@@ -219,6 +221,13 @@ if (process.env.NODE_ENV !== 'production') {
       if (!row) fail(404, 'No customer account is associated with this user.');
       res.json(accountData(db, row.id));
     });
+    // External (outbound) transfers to the client's real bank.
+    app.get('/api/external', auth, (req, res) => {
+      const account = db.prepare('SELECT id FROM accounts WHERE userId=?').get(req.user.id);
+      if (!account) fail(404, 'No customer account is associated with this user.');
+      res.json(externalSummary(db, account.id));
+    });
+    app.post('/api/external/transfer', auth, limiter, (req, res) => res.status(201).json(externalInitiate(db, req.user.id, req.body)));
     app.use('/api/admin', moderator);
     app.get('/api/admin/accounts', (req, res) => res.json(db.prepare('SELECT * FROM accounts ORDER BY id').all()));
     app.get('/api/admin/accounts/:id', (req, res) => res.json(accountData(db, identifier(req.params.id))));
@@ -233,6 +242,9 @@ if (process.env.NODE_ENV !== 'production') {
       if (!integrity(db, id).valid) fail(409, 'Issued statement integrity failed. PDF download is blocked.');
       res.set({ 'Content-Type': 'application/pdf', 'Content-Disposition': `attachment; filename="business-checking-${row.month}-r${row.revision}.pdf"` }).send(Buffer.from(row.pdf));
     });
+    app.get('/api/admin/external', (req, res) => res.json(externalQueue(db)));
+    app.post('/api/admin/external/:id/settle', (req, res) => res.json(externalSettle(db, identifier(req.params.id), req.user.id)));
+    app.post('/api/admin/external/:id/return', (req, res) => res.json(externalRefund(db, identifier(req.params.id), req.user.id, req.body && req.body.reason)));
     app.get('/api/admin/investments', (req, res) => res.json(db.prepare('SELECT * FROM investments ORDER BY id').all()));
     app.post('/api/admin/investments', (req, res) => res.status(201).json(saveInvestment(db, null, req.body, req.user.id)));
     app.put('/api/admin/investments/:id', (req, res) => res.json(saveInvestment(db, identifier(req.params.id), req.body, req.user.id)));

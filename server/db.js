@@ -17,9 +17,16 @@ export async function verifyPassword(password, encoded) {
   const actual = await derive(password, salt, 64, { N: 131072, r: 8, p: 1, maxmem: 256 * 1024 * 1024 });
   return timingSafeEqual(actual, Buffer.from(hex, 'hex'));
 }
+// Re-entrant transaction helper: nested atomic() calls (external transfers wrap the
+// internal ledger) used to throw 'cannot start a transaction within a transaction'.
+// Depth is tracked on the db handle; only the outermost frame issues BEGIN/COMMIT.
 export function atomic(db, operation) {
+  const depth = db.__atomicDepth || 0;
+  if (depth > 0) { db.__atomicDepth = depth + 1; try { return operation(); } finally { db.__atomicDepth = depth; } }
   db.exec('BEGIN IMMEDIATE');
-  try { const result = operation(); db.exec('COMMIT'); return result; } catch (error) { db.exec('ROLLBACK'); throw error; }
+  db.__atomicDepth = 1;
+  try { const result = operation(); db.exec('COMMIT'); db.__atomicDepth = 0; return result; }
+  catch (error) { db.exec('ROLLBACK'); db.__atomicDepth = 0; throw error; }
 }
 export function audit(db, actorId, action, entity, details = {}) {
   db.prepare('INSERT INTO audit(actorId, action, entity, details) VALUES (?, ?, ?, ?)').run(actorId ?? null, action, String(entity), JSON.stringify(details));
@@ -56,9 +63,14 @@ export async function seedDemo(db) {
   const moderatorHash = await hashPassword(demoCredentials.moderator[1]);
   atomic(db, () => {
     if (db.prepare("SELECT value FROM metadata WHERE key='demo-seeded'").get()) return;
-    const customer = Number(db.prepare('INSERT INTO users(email,name,address,role,passwordHash) VALUES (?,?,?,?,?)').run(demoCredentials.customer[0], 'Bakhtiari Auto Group, LLC', '3155 Stevens Creek, San Jose, CA 95117', 'customer', customerHash).lastInsertRowid);
-    const moderator = Number(db.prepare('INSERT INTO users(email,name,address,role,passwordHash) VALUES (?,?,?,?,?)').run(demoCredentials.moderator[0], 'Timothy Powers', 'Silicon Valley, California', 'moderator', moderatorHash).lastInsertRowid);
-    const accountId = newAccount(db, customer, 'Bakhtiari Auto Group, LLC', '3155 Stevens Creek, San Jose, CA 95117');
+    const findUser = db.prepare('SELECT id FROM users WHERE email=?');
+    const insertUser = db.prepare('INSERT INTO users(email,name,address,role,passwordHash) VALUES (?,?,?,?,?)');
+    const customer = Number(findUser.get(demoCredentials.customer[0])?.id)
+      || Number(insertUser.run(demoCredentials.customer[0], 'Bakhtiari Auto Group, LLC', '3155 Stevens Creek, San Jose, CA 95117', 'customer', customerHash).lastInsertRowid);
+    const moderator = Number(findUser.get(demoCredentials.moderator[0])?.id)
+      || Number(insertUser.run(demoCredentials.moderator[0], 'Timothy Powers', 'Silicon Valley, California', 'moderator', moderatorHash).lastInsertRowid);
+    const existingAccount = db.prepare('SELECT id FROM accounts WHERE userId=?').get(customer);
+    const accountId = existingAccount ? Number(existingAccount.id) : newAccount(db, customer, 'Bakhtiari Auto Group, LLC', '3155 Stevens Creek, San Jose, CA 95117');
     const descriptions = ['Cloud infrastructure', 'Software subscriptions', 'Office rent', 'Internet and communications', 'Business insurance', 'Accounting services', 'Digital marketing', 'Contract engineering', 'Office supplies', 'Security monitoring', 'Technology hardware', 'Business travel'];
     const base = [65000, 32000, 180000, 18000, 28000, 45000, 50000, 60000, 12000, 22000, 35000, 29700];
     const insert = db.prepare('INSERT INTO transactions(accountId,date,description,amount,actorId) VALUES (?,?,?,?,?)');
