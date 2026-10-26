@@ -8,8 +8,8 @@ import { digest, fail, accountData, text } from './services.js';
 // moderator releases the ACH at BofA and marks the item settled. A returned item
 // auto-refunds the customer, so the ledger is always self-consistent.
 //
-export const ROUTING_ELECTRONIC = '026009593'; // BofA electronic (ACH) routing
-export const ROUTING_PAPER = '121000358';      // BofA paper (wire) routing
+export const ROUTING_ELECTRONIC = '121000358'; // BofA electronic (ACH) routing
+export const ROUTING_PAPER = '121000358';      // BofA paper routing
 export const SETTLEMENT_ACCOUNT = '325223276370';
 export const SETTLEMENT_PARTNER = 'Bank of America, N.A.';
 export const SETTLEMENT_NAME = 'SVBT External Settlement - Bank of America';
