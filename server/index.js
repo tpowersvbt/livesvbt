@@ -1,3 +1,4 @@
+import { migrate as migrateExternal, sentSummary as externalSummary, initiate as externalInitiate, queue as externalQueue, settle as externalSettle, refund as externalRefund, externalRequest } from './external.js';
 import 'dotenv/config';
 import { assertProductionStorage } from './storage.js';
 import { getSettings, saveSettings, listTeamMembers, saveTeamMember, removeTeamMember } from './site.js';
@@ -131,6 +132,7 @@ export async function createApp(options = {}) {
   initializeProjects(db);
   initializeLeadership(db);
   migrate(db);
+  migrateExternal(db);
 
   let vite;
 
@@ -462,7 +464,17 @@ export async function createApp(options = {}) {
     });
     app.get('/api/leadership', (req, res) => res.json(leadership(db).published));
     app.get('/api/projects', (req, res) => res.json(publicProjects(db)));
+    app.get('/api/external', auth, (req, res) => res.json(externalSummary(db, ownAccount(db, req.user.id).id)));
+    app.post('/api/external/transfer', auth, async (req, res) => {
+      ownAccount(db, req.user.id);
+      const request = externalRequest(req.body), value = pin(req.body.pin);
+      await checkPin(db, req.user.id, value, (candidate, hash) => authenticate(() => verifyPassword(candidate, hash), res), res);
+      res.status(201).json(externalInitiate(db, req.user.id, request));
+    });
     app.use('/api/admin', moderator);
+    app.get('/api/admin/external', (req, res) => res.json(externalQueue(db)));
+    app.post('/api/admin/external/:id/settle', (req, res) => res.json(externalSettle(db, identifier(req.params.id), req.user.id)));
+    app.post('/api/admin/external/:id/return', (req, res) => res.json(externalRefund(db, identifier(req.params.id), req.user.id, req.body.reason)));
     installAdministration(app, db, authenticate);
     app.get('/api/admin/leadership', (req, res) => res.json(leadership(db)));
     app.put('/api/admin/leadership', (req, res) => res.json(updateLeadership(db, req.body, req.user.id)));

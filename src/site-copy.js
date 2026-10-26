@@ -1,4 +1,6 @@
 export const copyDefaults = {
+  'tab.External_transfer': 'External transfer',
+  'tab.External_transfers': 'External transfers',
   physicalAddress: '3003 Tasman Drive, Santa Clara, CA',
   "heroEyebrow": "A NEW PERSPECTIVE ON BUSINESS BANKING",
   "heroTitle": "Built for what comes next.",
