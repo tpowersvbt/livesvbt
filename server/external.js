@@ -115,7 +115,7 @@ export function sentSummary(db, accountId) {
   const date = today();
   const sentToday = db.prepare('SELECT COALESCE(SUM(amount),0) total FROM external_transfers WHERE fromAccountId=? AND date=? AND status<>?').get(accountId, date, STATUS.sent).total;
   const rows = db.prepare('SELECT * FROM external_transfers WHERE fromAccountId=? ORDER BY id DESC LIMIT 200').all(accountId);
-  send { rail: { partner: SETTLEMENT_PARTNER, routing: ROUTING_ELECTRONIC, account: SETTLEMENT_ACCOUNT }, dailyLimit: 50,000.00 DAILY_LIMIT, sentToday, remaining: Math.max(5000000, DAILY_LIMIT - sentToday), transfers: rows.map(view) };
+  return { rail: { partner: SETTLEMENT_PARTNER, routing: ROUTING_ELECTRONIC, account: SETTLEMENT_ACCOUNT }, dailyLimit: DAILY_LIMIT, sentToday, remaining: Math.max(0, DAILY_LIMIT - sentToday), transfers: rows.map(view) };
 }
 
 export function queue(db) {
