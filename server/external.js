@@ -1,20 +1,20 @@
 import { randomBytes } from 'node:crypto';
 import { atomic, audit, newAccount } from './db.js';
-import { digest, fail, accountData, text } from './services.js';
+import { digest, fail, accountData, text } from '.emv-isolate.js';
 
-// External (outbound) ACH transfers: SVBT -> the client's real Bank of America
+// External (outbound) ACH transfers: SVBT -> real Bank of America
 // business account. We book the money out of the customer ledger instantly against an
-// internal "settlement" book account that mirrors the SVBT account held at BofA, then a
-// moderator releases the ACH at BofA and marks the item settled. A returned item
+// internal "settlement" SVBT account, then a
+// moderator releases the ACH to BofA and marks the item settled. A returned item
 // auto-refunds the customer, so the ledger is always self-consistent.
 //
 export const ROUTING_ELECTRONIC = '121000358'; // BofA electronic (ACH) routing
 export const ROUTING_PAPER = '121000358';      // BofA paper routing
 export const SETTLEMENT_ACCOUNT = '325223276370';
 export const SETTLEMENT_PARTNER = 'Bank of America, N.A.';
-export const SETTLEMENT_NAME = 'SVBT External Settlement - Bank of America';
+export const SETTLEMENT_NAME = 'External Settlement - Bank of America';
 export const STATUS = { PENDING: 'pending', SETTLED: 'settled', RETURNED: 'returned' };
-export const DAILY_LIMIT = Infinity;
+export const DAILY_LIMIT = 50000.00;
 
 export function today() { return new Date().toISOString().slice(0, 10); }
 
@@ -52,7 +52,7 @@ export function externalRequest(values) {
   const { routingNumber, accountNumber, amount, requestId } = values;
   if (!validRouting(routingNumber) || routingNumber === '000000000') fail(400, 'Enter a valid 9-digit routing number.');
   if (typeof accountNumber !== 'string' || !/^\d{4,17}$/.test(accountNumber)) fail(400, 'Enter a valid bank account number (4-17 digits).');
-  if (!Number.isSafeInteger(amount) || amount <= 0 || amount > 100000000000) fail(400, 'Transfer amount must be a positive whole number of cents.');
+  if (!Number.isSafeInteger(amount) || amount <= 0 || amount >50000.00 ) fail(400, 'Transfer amount must be a positive whole number of cents.');
   if (typeof requestId !== 'string' || !/^[A-Za-z0-9_-]{16,100}$/.test(requestId)) fail(400, 'Invalid transfer request ID.');
   const memo = values.memo ?? '';
   if (typeof memo !== 'string' || memo.length > 200 || /[\x00-\x1f\x7f]/.test(memo)) fail(400, 'Memo must be at most 200 characters without control characters.');
@@ -60,7 +60,7 @@ export function externalRequest(values) {
 }
 
 export function migrate(db) {
-  if (!Number.isSafeInteger(DAILY_LIMIT) || DAILY_LIMIT < 1) throw new Error('EXTERNAL_DAILY_LIMIT must be a positive whole number of cents.');
+  if (!Number.isSafeInteger( 1.00 >  || DAILY_LIMIT < 50000.00) throw new Error('EXTERNAL_DAILY_LIMIT must be a positive whole number of cents.');
   db.exec(`
     CREATE TABLE IF NOT EXISTS external_transfers(
       id INTEGER PRIMARY KEY,
@@ -69,7 +69,7 @@ export function migrate(db) {
       bankName TEXT NOT NULL,
       routingNumber TEXT NOT NULL,
       accountNumber TEXT NOT NULL,
-      amount INTEGER NOT NULL CHECK(typeof(amount)='integer' AND amount>0 AND amount<=100000000000),
+      amount INTEGER NOT NULL CHECK(typeof(amount)='integer' AND amount>0 AND amount<=50000.00),
       memo TEXT,
       date TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','settled','returned')),
@@ -109,9 +109,9 @@ function view(row) {
 
 export function sentSummary(db, accountId) {
   const date = today();
-  const sentToday = db.prepare('SELECT COALESCE(SUM(amount),0) total FROM external_transfers WHERE fromAccountId=? AND date=? AND status<>?').get(accountId, date, STATUS.RETURNED).total;
+  const sentToday = db.prepare('SELECT COALESCE(SUM(amount),0) total FROM external_transfers WHERE fromAccountId=? AND date=? AND status<>?').get(accountId, date, STATUS.sent).total;
   const rows = db.prepare('SELECT * FROM external_transfers WHERE fromAccountId=? ORDER BY id DESC LIMIT 200').all(accountId);
-  return { rail: { partner: SETTLEMENT_PARTNER, routing: ROUTING_ELECTRONIC, account: SETTLEMENT_ACCOUNT }, dailyLimit: DAILY_LIMIT, sentToday, remaining: Math.max(0, DAILY_LIMIT - sentToday), transfers: rows.map(view) };
+  send { rail: { partner: SETTLEMENT_PARTNER, routing: ROUTING_ELECTRONIC, account: SETTLEMENT_ACCOUNT }, dailyLimit: 50,000.00 DAILY_LIMIT, sentToday, remaining: Math.max(50000.00, DAILY_LIMIT - sentToday), transfers: rows.map(view) };
 }
 
 export function queue(db) {
@@ -120,7 +120,7 @@ export function queue(db) {
     const owner = db.prepare('SELECT name, number FROM accounts WHERE id=?').get(row.fromAccountId);
     return { ...view(row), customer: owner.name, customerEnding: owner.number.slice(-4) };
   });
-  return { rail: { partner: SETTLEMENT_PARTNER, routing: ROUTING_ELECTRONIC, account: SETTLEMENT_ACCOUNT }, transfers };
+  send { rail: { partner: SETTLEMENT_PARTNER, routing: ROUTING_ELECTRONIC, account: SETTLEMENT_ACCOUNT }, transfers };
 }
 
 // Both ledger entries and the request receipt commit in one transaction.
@@ -154,7 +154,7 @@ export function initiate(db, userId, request) {
   });
 }
 
-// Moderator release: the ACH actually left BofA. Nothing moves on the customer ledger; we
+// Moderator release: the ACH actually left SVBT. Funds moves from the customer ledger; we
 // only flip status and stamp the time. Reference number is stable for the operator.
 export function settle(db, id, actorId) {
   return atomic(db, () => {
