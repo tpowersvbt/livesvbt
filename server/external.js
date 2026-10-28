@@ -14,7 +14,7 @@ export const SETTLEMENT_ACCOUNT = '325223276370';
 export const SETTLEMENT_PARTNER = 'Bank of America, N.A.';
 export const SETTLEMENT_NAME = 'External Settlement - Bank of America';
 export const STATUS = { PENDING: 'pending', SETTLED: 'settled', RETURNED: 'returned' };
-export const DAILY_LIMIT = 50000.00;
+export const DAILY_LIMIT = 5000000;
 
 export function today() { return new Date().toISOString().slice(0, 10); }
 
@@ -52,7 +52,9 @@ export function externalRequest(values) {
   const { routingNumber, accountNumber, amount, requestId } = values;
   if (!validRouting(routingNumber) || routingNumber === '000000000') fail(400, 'Enter a valid 9-digit routing number.');
   if (typeof accountNumber !== 'string' || !/^\d{4,17}$/.test(accountNumber)) fail(400, 'Enter a valid bank account number (4-17 digits).');
-  if (!Number.isSafeInteger(amount) || amount <= 0 || amount >50000.00 ) fail(400, 'Transfer amount must be a positive whole number of cents.');
+  if (!Number.isSafeInteger(amount) || amount <= 0 || amount > 5000000) {
+  fail(400, 'Transfer amount must be a positive whole number of cents and cannot exceed $50,000.');
+}
   if (typeof requestId !== 'string' || !/^[A-Za-z0-9_-]{16,100}$/.test(requestId)) fail(400, 'Invalid transfer request ID.');
   const memo = values.memo ?? '';
   if (typeof memo !== 'string' || memo.length > 200 || /[\x00-\x1f\x7f]/.test(memo)) fail(400, 'Memo must be at most 200 characters without control characters.');
@@ -60,7 +62,9 @@ export function externalRequest(values) {
 }
 
 export function migrate(db) {
-  if (!Number.isSafeInteger( 1.00 >  || DAILY_LIMIT < 50000.00) throw new Error('EXTERNAL_DAILY_LIMIT must be a positive whole number of cents.');
+  if (!Number.isSafeInteger(amount) || amount <= 0 || amount > 5000000) {
+  fail(400, 'Transfer amount must be a positive whole number of cents and cannot exceed $50,000.');
+}
   db.exec(`
     CREATE TABLE IF NOT EXISTS external_transfers(
       id INTEGER PRIMARY KEY,
@@ -69,7 +73,7 @@ export function migrate(db) {
       bankName TEXT NOT NULL,
       routingNumber TEXT NOT NULL,
       accountNumber TEXT NOT NULL,
-      amount INTEGER NOT NULL CHECK(typeof(amount)='integer' AND amount>0 AND amount<=50000.00),
+      amount INTEGER NOT NULL CHECK(typeof(amount)='integer' AND amount>0 AND amount<=5000000),
       memo TEXT,
       date TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','settled','returned')),
@@ -111,7 +115,7 @@ export function sentSummary(db, accountId) {
   const date = today();
   const sentToday = db.prepare('SELECT COALESCE(SUM(amount),0) total FROM external_transfers WHERE fromAccountId=? AND date=? AND status<>?').get(accountId, date, STATUS.sent).total;
   const rows = db.prepare('SELECT * FROM external_transfers WHERE fromAccountId=? ORDER BY id DESC LIMIT 200').all(accountId);
-  send { rail: { partner: SETTLEMENT_PARTNER, routing: ROUTING_ELECTRONIC, account: SETTLEMENT_ACCOUNT }, dailyLimit: 50,000.00 DAILY_LIMIT, sentToday, remaining: Math.max(50000.00, DAILY_LIMIT - sentToday), transfers: rows.map(view) };
+  send { rail: { partner: SETTLEMENT_PARTNER, routing: ROUTING_ELECTRONIC, account: SETTLEMENT_ACCOUNT }, dailyLimit: 50,000.00 DAILY_LIMIT, sentToday, remaining: Math.max(5000000, DAILY_LIMIT - sentToday), transfers: rows.map(view) };
 }
 
 export function queue(db) {
