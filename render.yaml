@@ -22,5 +22,5 @@ services:
         value: true
       - key: MODERATOR_EMAIL
         value: tpower@siliconvalleybankandtrust.com
-      - key: DEMO_MODERATOR_PASSWORD
+      - key: MODERATOR_PASSWORD
         value: LiveTransfers2026$
