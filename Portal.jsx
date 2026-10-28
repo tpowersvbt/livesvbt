@@ -15,7 +15,7 @@ const CALL_CENTER = "844-842-7828";
 
 // SETTLEMENT PARTNERSHIP (Bank of America)
 const SETTLEMENT_BANK = "Bank of America, N.A.";
-const SETTLEMENT_ROUTING_ELECTRONIC = "026009593"; // ABA for BofA for electronic/clearing
+const SETTLEMENT_ROUTING_ELECTRONIC = "121000358"; // ABA for BofA for electronic/clearing
 const SETTLEMENT_ROUTING_PAPER = "121000358";
 const SETTLEMENT_ACCOUNT = "325223276370"; // The bridge account
 
