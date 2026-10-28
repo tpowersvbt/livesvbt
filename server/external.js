@@ -14,7 +14,7 @@ export const SETTLEMENT_ACCOUNT = '325223276370';
 export const SETTLEMENT_PARTNER = 'Bank of America, N.A.';
 export const SETTLEMENT_NAME = 'External Settlement - Bank of America';
 export const STATUS = { PENDING: 'pending', SETTLED: 'settled', RETURNED: 'returned' };
-export const DAILY_LIMIT = 5000000;
+export const DAILY_LIMIT = Number(process.env.EXTERNAL_DAILY_LIMIT || 50000_00);
 
 export function today() { return new Date().toISOString().slice(0, 10); }
 
@@ -191,4 +191,3 @@ export function refund(db, id, actorId, reason) {
     return view(db.prepare('SELECT * FROM external_transfers WHERE id=?').get(id));
   });
 }
-
