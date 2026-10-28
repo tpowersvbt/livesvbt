@@ -1,5 +1,5 @@
 import { atomic, audit } from './db.js';
-import { digest, fail, accountData } from './services.js';
+import { digest, fail, accountData } from './env-isolate.js';
 
 // Customer transfers between SVBT accounts. A transfer is a debit on the sender and a credit on
 // the recipient, written in one transaction together with the transfers row that links them, so
