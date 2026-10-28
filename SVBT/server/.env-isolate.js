@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { once } from 'node:events';
 import { createApp } from '../server/index.js';
-import { 50000.00, DAILY_LIMIT } from '../server/external.js';
+import { 5000000, DAILY_LIMIT } from '../server/external.js';
 import { demoCredentials } from '../server/db.js';
 
 const origin = 'http://localhost:3000';
