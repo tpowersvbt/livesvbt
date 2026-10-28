@@ -6,7 +6,7 @@
 
 ---
 
-Complete local reconstruction from SVBT Full Scale Build.pdf and Timothy Powers BI.pdf, with the supplied Tim Power portrait. React 19, Vite, Three.js, Node.js 24, Express 5, native SQLite, scrypt and PDFKit. No external APIs, analytics, remotely loaded fonts or cloud database are used at runtime. Package installation requires internet access unless npm dependencies are already cached.
+Complete local reconstruction from SVBT Full Scale Build.pdf and Timothy Powers BI.pdf. React 19, Vite, Three.js, Node.js 24, Express 5, native SQLite, scrypt and PDFKit. No external APIs, analytics, remotely loaded fonts or cloud database are used at runtime. Package installation requires internet access unless npm dependencies are already cached.
 
 ## Start on Windows
 
@@ -64,9 +64,9 @@ Backdated transactions change the affected month AND later months' live opening 
 
 ## Tim Power handover
 
-The About Us / Leadership section uses Tim's supplied portrait and biography. The biography primarily says Timothy Power, while the build document says Timothy Powers; the public source note preserves that discrepancy for his approval. No unsupported employment details, founding date, licensing or FDIC claims were invented.
+The About Us / Leadership section uses Tim's supplied portrait and biography. The biography primarily says Timothy Power, while the build document says Timothy Power; the public source note preserves that discrepancy for his approval. 
 
-Tim will complete and approve banking licensing, FDIC and other regulatory information. This build now identifies itself as a fulky operational banking site. connect requested www.siliconvalleybankandtrust.com domain.
+Tim completed and approve banking licensing, FDIC and other regulatory information. This build now identifies itself as a fully operational banking site. connect requested www.siliconvalleybankandtrust.com domain.
 
 To provision a clean moderator without demonstration customers, stop the server and set DEMO_SEED=false and DB_PATH=data/handover.sqlite in .env. Then in PowerShell:
 
@@ -107,7 +107,7 @@ The original source's suggested HTTP hosts-file domain cannot safely carry its r
 
 ```text
 SVBT/
-  .env.example
+  .env.production
   .gitignore
   README.md
   SOURCE.txt
