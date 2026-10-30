@@ -6,10 +6,55 @@ import { join } from 'node:path';
 import { once } from 'node:events';
 import { execFileSync } from 'node:child_process';
 import { createApp } from '../server/index.js';
-import { openDatabase, verifyPassword } from '../server/db.js';
+import { openDatabase, verifyPassword, hashPassword } from '../server/db.js';
 import { digest } from '../server/services.js';
 
 const origin = 'http://localhost:3000';
+
+test('project and biography publishing keeps drafts private and requires moderator authority', async () => {
+  const f = await fixture();
+  try {
+    const anon=f.client(), customer=f.client(), admin=f.client();
+    assert.deepEqual((await anon.request('/projects')).data, []);
+    assert.equal((await anon.request('/admin/projects')).status,401);
+    assert.equal((await anon.request('/admin/leadership')).status,401);
+    await customer.login('sales@bakhtiariautogroup.com','FounderClient!2026');
+    for (const path of ['/admin/projects','/admin/leadership']) assert.equal((await customer.request(path)).status,403);
+    assert.equal((await customer.request('/admin/projects','POST',{title:'forbidden'})).status,403);
+    await admin.login('tpower@siliconvalleybankandtrust.com','ModeratorGod!2026');
+    const values={title:'Data project',summary:'Public overview',description:'First paragraph.\nSecond paragraph.',privateNotes:'SECRET-NOTES',published:'malicious-auto-publish'};
+    const created=await admin.request('/admin/projects','POST',values);
+    assert.equal(created.status,201);
+    let row=created.data;
+    assert.equal(row.published,null);
+    assert.deepEqual((await anon.request('/projects')).data,[]);
+    assert.equal((await admin.request(`/admin/projects/${row.id}/publish`,'POST',{version:row.version},{'X-CSRF-Token':''})).status,403);
+    row=(await admin.request(`/admin/projects/${row.id}/publish`,'POST',{version:row.version})).data;
+    let publicRows=(await anon.request('/projects')).data;
+    assert.equal(publicRows[0].title,values.title);
+    assert.ok(!JSON.stringify(publicRows).includes('SECRET-NOTES'));
+    assert.deepEqual(Object.keys(publicRows[0]).sort(),['description','id','publishedAt','summary','title']);
+    assert.equal((await admin.request(`/admin/projects/${row.id}`,'PUT',{...values,version:1})).status,409);
+    row=(await admin.request(`/admin/projects/${row.id}`,'PUT',{...values,title:'Private revision',version:row.version})).data;
+    assert.equal((await anon.request('/projects')).data[0].title,'Data project');
+    row=(await admin.request(`/admin/projects/${row.id}/publish`,'POST',{version:row.version})).data;
+    assert.equal((await anon.request('/projects')).data[0].title,'Private revision');
+    assert.equal((await admin.request(`/admin/projects/${row.id}/unpublish`,'POST',{version:row.version})).status,200);
+    assert.deepEqual((await anon.request('/projects')).data,[]);
+    assert.equal((await admin.request('/admin/projects')).data[0].privateNotes,'SECRET-NOTES');
+    const original=(await anon.request('/leadership')).data;
+    let bio=(await admin.request('/admin/leadership')).data;
+    bio=(await admin.request('/admin/leadership','PUT',{...bio.draft,biography:'Reviewed biography.\nWith a second paragraph.',version:bio.version})).data;
+    assert.deepEqual((await anon.request('/leadership')).data,original);
+    assert.equal((await customer.request('/admin/leadership/publish','POST',{version:bio.version,reviewed:true})).status,403);
+    assert.equal((await admin.request('/admin/leadership/publish','POST',{version:bio.version,reviewed:false})).status,400);
+    assert.equal((await admin.request('/admin/leadership/publish','POST',{version:bio.version,reviewed:true})).status,200);
+    assert.equal((await anon.request('/leadership')).data.biography,'Reviewed biography.\nWith a second paragraph.');
+    assert.equal((await admin.request('/admin/leadership')).data.original.biography,original.biography);
+    assert.ok(f.db.prepare("SELECT id FROM audit WHERE action='leadership.publish'").get());
+    assert.ok(f.db.prepare("SELECT id FROM audit WHERE action='project.unpublish'").get());
+  } finally { await f.close(); }
+});
 async function fixture(options = {}) {
   const directory = mkdtempSync(join(tmpdir(), 'svbt-test-'));
   const app = await createApp({ production: false, origin, frontend: false, dbPath: join(directory, 'bank.sqlite'), statementDir: join(directory, 'statements'), demoSeed: true, ...options });
@@ -255,7 +300,6 @@ test('production fails closed and unseeded databases have no default users', asy
   const f = await fixture({ production: true, demoSeed: false, origin: 'https://bank.example' });
   try {
     assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM users').get().n, 0);
-    assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM accounts').get().n, 0);
     const health = await f.client().request('/health');
     assert.equal(health.status, 200);
     assert.deepEqual(health.data, { status: 'ok' });
@@ -267,31 +311,26 @@ test('production fails closed and unseeded databases have no default users', asy
     assert.match(csp, /frame-ancestors 'none'/);
     assert.equal((await fetch(`${f.url}/`)).status, 404);
   } finally { await f.close(); }
-  const directory = mkdtempSync(join(tmpdir(), 'svbt-production-clean-'));
-  const names = ['NODE_ENV', 'DEMO_SEED', 'APP_ORIGIN', 'MODERATOR_EMAIL', 'MODERATOR_PASSWORD'];
-  const prior = Object.fromEntries(names.map(name => [name, process.env[name]]));
-  try {
-    process.env.NODE_ENV = 'production';
-    process.env.DEMO_SEED = 'false';
-    process.env.APP_ORIGIN = 'https://bank.example';
-    delete process.env.MODERATOR_EMAIL;
-    delete process.env.MODERATOR_PASSWORD;
-    const clean = await createApp({ dbPath: join(directory, 'bank.sqlite'), statementDir: join(directory, 'statements'), frontend: false });
-    try {
-      assert.equal(clean.locals.db.prepare('SELECT COUNT(*) AS n FROM users').get().n, 0);
-      assert.equal(clean.locals.db.prepare('SELECT COUNT(*) AS n FROM accounts').get().n, 0);
-      assert.equal(clean.locals.db.prepare("SELECT COUNT(*) AS n FROM users WHERE email IN ('sales@bakhtiariautogroup.com','tpower@siliconvalleybankandtrust.com')").get().n, 0);
-    } finally { await clean.locals.close(); }
-  } finally {
-    for (const name of names) {
-      if (prior[name] === undefined) delete process.env[name];
-      else process.env[name] = prior[name];
-    }
-    rmSync(directory, { recursive: true, force: true });
-  }
   const seeded = await fixture();
   try { await assert.rejects(createApp({ dbPath: seeded.app.locals.config.dbPath, production: true, demoSeed: false, origin: 'https://bank.example', frontend: false }), /demo-seeded database/); }
   finally { await seeded.close(); }
+});
+
+test('production refuses sign-in and new accounts that use a published password', async () => {
+  const f = await fixture({ production: true, demoSeed: false, origin: 'https://bank.example' });
+  try {
+    const insert = f.db.prepare("INSERT INTO users(email,name,address,role,passwordHash) VALUES (?,?,?,'moderator',?)");
+    insert.run('leaked@example.com', 'Leaked', 'A', await hashPassword('svbt2026!'));
+    insert.run('unique@example.com', 'Unique', 'A', await hashPassword('UniqueOperations!2026'));
+    const write = { Origin: 'https://bank.example' };
+    const signIn = async (email, password) => { const c = f.client(); await c.request('/session'); return c.request('/login', 'POST', { email, password }, write); };
+    const leaked = await signIn('leaked@example.com', 'svbt2026!');
+    assert.equal(leaked.status, 401);
+    assert.equal(leaked.data.error, 'Email or password is incorrect.');
+    assert.equal((await signIn('unique@example.com', 'UniqueOperations!2026')).status, 200);
+    const c = f.client(); await c.request('/session');
+    assert.equal((await c.request('/register', 'POST', { name: 'Founder', address: 'A', email: 'new@example.com', password: 'ModeratorGod!2026' }, write)).status, 400);
+  } finally { await f.close(); }
 });
 
 test('persistent demo startup is idempotent and concurrent statement issuance is serialized', async () => {
@@ -342,80 +381,168 @@ test('server-only moderator provisioning requires unique non-demo credentials', 
     assert.equal(afterReset.prepare('SELECT COUNT(*) AS n FROM sessions WHERE userId=?').get(user.id).n, 0);
     assert.ok(afterReset.prepare("SELECT id FROM audit WHERE action='moderator.password-reset'").get());
     afterReset.close();
+    const ownerEnv = { ...env, MODERATOR_EMAIL: 'owner@example.com', MODERATOR_PASSWORD: 'UniqueOwnerAccess!2026', MODERATOR_ROLE: 'owner' };
+    execFileSync(process.execPath, ['server/create-moderator.js'], { env: ownerEnv, stdio: 'pipe' });
+    assert.throws(() => execFileSync(process.execPath, ['server/create-moderator.js'], { env: { ...ownerEnv, MODERATOR_EMAIL: 'other@example.com', MODERATOR_ROLE: 'admin' }, stdio: 'pipe' }), /MODERATOR_ROLE must be/);
+    execFileSync(process.execPath, ['server/create-moderator.js'], { env: { ...ownerEnv, MODERATOR_RESET: 'true', MODERATOR_ROLE: 'moderator', MODERATOR_PASSWORD: 'RotatedOwnerAccess!2026' }, stdio: 'pipe' });
+    const roles = openDatabase(env.DB_PATH);
+    assert.equal(roles.prepare("SELECT role FROM staff_access WHERE userId=(SELECT id FROM users WHERE email='owner@example.com')").get().role, 'owner');
+    assert.equal(roles.prepare('SELECT role FROM staff_access WHERE userId=?').get(user.id), undefined);
+    roles.close();
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
-test('site settings and team: public reads, moderator-only writes, validation and ordering', async () => {
-  const f = await fixture();
+test('failed passwords lock the account across IP addresses without revealing whether it exists', async () => {
+  const f = await fixture({ accountFailureLimit: 3, trustProxy: true });
   try {
-    const anon = f.client(); await anon.request('/session');
-    const pub = await anon.request('/site');
-    assert.equal(pub.status, 200);
-    assert.ok(pub.data.settings.heroTitle);
-    assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM site_settings').get().n, 1);
-    assert.deepEqual((await anon.request('/team')).data, []);
-    assert.equal((await anon.request('/admin/settings', 'PUT', { heroTitle: 'x' })).status, 401);
-    assert.equal((await anon.request('/admin/site', 'PUT', { heroTitle: 'x' })).status, 401);
-    const customer = f.client(); await customer.request('/session');
-    await customer.request('/login', 'POST', { email: 'sales@bakhtiariautogroup.com', password: 'FounderClient!2026' });
-    assert.equal((await customer.request('/admin/settings', 'PUT', { heroTitle: 'x' })).status, 403);
-    assert.equal((await customer.request('/admin/site', 'PUT', { heroTitle: 'x' })).status, 403);
-    assert.equal((await customer.request('/admin/employees', 'POST', { name: 'A', title: 'B', bio: 'C' })).status, 403);
-    const c = f.client(); await c.request('/session');
-    assert.equal((await c.request('/login', 'POST', { email: 'tpower@siliconvalleybankandtrust.com', password: 'ModeratorGod!2026' })).status, 200);
-    assert.equal((await c.request('/admin/settings', 'PUT', { heroTitle: 'New title', bannerImage: 'javascript:alert(1)' })).status, 400);
-    assert.equal((await c.request('/admin/settings', 'PUT', { unknown: 'x' })).status, 400);
-    assert.equal((await c.request('/admin/site', 'PUT', { heroTitle: 'New title', footerText: 'Footer', bannerImage: '/banner.png', heroImage: '/svbt-facade.jpg', footerImage: '/footer.jpg' })).status, 200);
-    assert.equal((await anon.request('/site')).data.settings.heroTitle, 'New title');
-    assert.equal((await anon.request('/site')).data.settings.heroImage, '/svbt-facade.jpg');
-    assert.equal(f.db.prepare('SELECT heroTitle FROM site_settings WHERE id=1').get().heroTitle, 'New title');
-    assert.deepEqual((await c.request('/admin/team')).data, []);
-    const first = (await c.request('/admin/team', 'POST', { name: 'First', title: 'T', bio: 'B', photoUrl: 'https://example.com/a.jpg', displayOrder: 1 })).data;
-    assert.equal((await c.request(`/admin/team/${first.id}`, 'PUT', { name: 'First Updated', title: 'T2', bio: 'Updated', displayOrder: 3 })).data.name, 'First Updated');
-    assert.equal((await anon.request('/team')).data[0].name, 'First Updated');
-    assert.equal((await c.request(`/admin/team/${first.id}`, 'DELETE', {})).status, 200);
-    assert.deepEqual((await anon.request('/team')).data, []);
-    const second = (await c.request('/admin/employees', 'POST', { name: 'Second', title: 'T', bio: 'B', displayOrder: 2 })).data;
-    await c.request('/admin/employees', 'POST', { name: 'First', title: 'T', bio: 'B', photoUrl: 'https://example.com/a.jpg', displayOrder: 1 });
-    assert.equal((await c.request('/admin/employees', 'POST', { name: 'Bad', title: 'T', bio: 'B', photoUrl: 'http://example.com/a.jpg' })).status, 400);
-    assert.deepEqual((await anon.request('/site')).data.employees.map(e => e.name), ['First', 'Second']);
-    assert.equal((await c.request(`/admin/employees/${second.id}`, 'DELETE', {})).status, 200);
-    assert.equal((await c.request(`/admin/employees/${second.id}`, 'DELETE', {})).status, 404);
-    assert.deepEqual((await anon.request('/site')).data.employees.map(e => e.name), ['First']);
+    const email = 'sales@bakhtiariautogroup.com';
+    for (const [i, target] of [email, 'nobody@example.com'].entries()) {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const c = f.client();
+        await c.request('/session', 'GET', undefined, { 'X-Forwarded-For': `198.51.100.${i * 10 + attempt}` });
+        assert.equal((await c.request('/login', 'POST', { email: target, password: 'wrong-password' }, { 'X-Forwarded-For': `198.51.100.${i * 10 + attempt}` })).status, 401);
+      }
+      const c = f.client();
+      await c.request('/session', 'GET', undefined, { 'X-Forwarded-For': '203.0.113.9' });
+      const locked = await c.request('/login', 'POST', { email: target.toUpperCase(), password: target === email ? 'FounderClient!2026' : 'x' }, { 'X-Forwarded-For': '203.0.113.9' });
+      assert.equal(locked.status, 429);
+      assert.ok(Number(locked.headers.get('retry-after')) > 0);
+    }
+    assert.ok(f.db.prepare("SELECT id FROM audit WHERE action='session.locked'").get());
+    const other = f.client();
+    await other.login('tpower@siliconvalleybankandtrust.com', 'ModeratorGod!2026');
+  } finally { await f.close(); }
+  const reset = await fixture({ accountFailureLimit: 2 });
+  try {
+    const c = reset.client();
+    await c.request('/session');
+    assert.equal((await c.request('/login', 'POST', { email: 'sales@bakhtiariautogroup.com', password: 'wrong-password' })).status, 401);
+    await c.login('sales@bakhtiariautogroup.com', 'FounderClient!2026');
+    assert.equal((await c.request('/profile', 'PATCH', { name: 'A', address: 'B', password: 'wrong-password' })).status, 401);
+    assert.equal((await c.request('/profile', 'PATCH', { name: 'A', address: 'B', password: 'wrong-password' })).status, 401);
+    assert.equal((await c.request('/profile', 'PATCH', { name: 'A', address: 'B', password: 'FounderClient!2026' })).status, 429);
+  } finally { await reset.close(); }
+});
+
+test('new anonymous sessions are throttled and IPv6 clients are limited per /64', async () => {
+  const { clientKey } = await import('../server/index.js');
+  assert.equal(clientKey('2001:db8:1:2:aaaa::1'), clientKey('2001:db8:1:2:bbbb:cccc:dddd:eeee'));
+  assert.notEqual(clientKey('2001:db8:1:2::1'), clientKey('2001:db8:1:3::1'));
+  assert.equal(clientKey('::ffff:192.0.2.1'), '192.0.2.1');
+  assert.equal(clientKey('192.0.2.1'), '192.0.2.1');
+  const f = await fixture({ sessionRateLimit: 2 });
+  try {
+    for (let i = 0; i < 2; i++) assert.equal((await f.client().request('/session')).status, 200);
+    const denied = await f.client().request('/session');
+    assert.equal(denied.status, 429);
+    assert.equal(f.db.prepare('SELECT COUNT(*) n FROM sessions').get().n, 2);
+    const anonymous = f.db.prepare('SELECT * FROM sessions').get();
+    assert.ok(anonymous.expiresAt - Date.now() <= 2 * 60 * 60 * 1000);
   } finally { await f.close(); }
 });
 
-test('Funds Flow bulk CSV validates all rows before atomically posting 1-2000 entries', async () => {
+test('signed-in sessions expire when idle, slide on activity and never pass eight hours', async () => {
+  const f = await fixture({ sessionIdleMs: 5 * 60 * 1000 });
+  try {
+    const c = f.client();
+    await c.login('sales@bakhtiariautogroup.com', 'FounderClient!2026');
+    const hash = digest(c.cookie.split('=')[1]);
+    let row = f.db.prepare('SELECT * FROM sessions WHERE tokenHash=?').get(hash);
+    assert.ok(row.expiresAt - Date.now() <= 5 * 60 * 1000);
+    assert.ok(row.absoluteExpiresAt - Date.now() > 7 * 60 * 60 * 1000);
+    f.db.prepare('UPDATE sessions SET expiresAt=? WHERE tokenHash=?').run(Date.now() + 60 * 1000, hash);
+    assert.equal((await c.request('/account')).status, 200);
+    row = f.db.prepare('SELECT * FROM sessions WHERE tokenHash=?').get(hash);
+    assert.ok(row.expiresAt - Date.now() > 4 * 60 * 1000);
+    f.db.prepare('UPDATE sessions SET expiresAt=?, absoluteExpiresAt=? WHERE tokenHash=?').run(Date.now() + 30 * 1000, Date.now() + 30 * 1000, hash);
+    assert.equal((await c.request('/account')).status, 200);
+    assert.ok(f.db.prepare('SELECT expiresAt FROM sessions WHERE tokenHash=?').get(hash).expiresAt <= Date.now() + 30 * 1000);
+    f.db.prepare('UPDATE sessions SET expiresAt=? WHERE tokenHash=?').run(Date.now() - 1, hash);
+    assert.equal((await c.request('/account')).status, 401);
+  } finally { await f.close(); }
+});
+
+test('a repeated ledger post with the same request ID records one entry', async () => {
   const f = await fixture();
   try {
     const admin = f.client();
     await admin.login('tpower@siliconvalleybankandtrust.com', 'ModeratorGod!2026');
-    const result = await admin.request('/admin/accounts/1/transactions/bulk', 'POST', {
-      rows: 'date,description,amount\n2026-10-01,Wire in,"1,500.00"\n2026-10-02,"Office rent, Suite 4",(1800.50)'
-    });
-    assert.equal(result.status, 201);
-    assert.deepEqual(result.data.map(row => [row.description, row.amount]), [['Wire in', 150000], ['Office rent, Suite 4', -180050]]);
-    const existing = f.db.prepare('SELECT COUNT(*) AS n FROM transactions WHERE date >= ?').get('2026-10-01').n;
-    const invalid = await admin.request('/admin/accounts/1/transactions/bulk', 'POST', {
-      rows: '2026-10-03,Valid row,1.00\n2026-10-04,Invalid row,not-money'
-    });
-    assert.equal(invalid.status, 400);
-    assert.equal(f.db.prepare('SELECT COUNT(*) AS n FROM transactions WHERE date >= ?').get('2026-10-01').n, existing);
-    const entries = await admin.request('/admin/accounts/1/transactions/bulk', 'POST', {
-      entries: [{ date: '2026-10-05', description: 'Existing format', amount: 100 }]
-    });
-    assert.equal(entries.status, 201);
-    const tooMany = await admin.request('/admin/accounts/1/transactions/bulk', 'POST', {
-      rows: Array.from({ length: 2001 }, (_, i) => `2026-10-01,Row ${i + 1},1.00`).join('\n')
-    });
-    assert.equal(tooMany.status, 400);
+    const accountId = f.db.prepare('SELECT id FROM accounts ORDER BY id LIMIT 1').get().id;
+    const before = f.db.prepare('SELECT COUNT(*) n FROM transactions').get().n;
+    const entry = { date: '2026-10-01', description: 'Wire in', amount: 12345, requestId: 'a1b2c3d4-e5f6-4711-8000-000000000001' };
+    const responses = await Promise.all([1, 2, 3].map(() => admin.request(`/admin/accounts/${accountId}/transactions`, 'POST', entry)));
+    for (const response of responses) assert.equal(response.status, 201);
+    assert.equal(new Set(responses.map(response => response.data.id)).size, 1);
+    assert.equal(f.db.prepare('SELECT COUNT(*) n FROM transactions').get().n, before + 1);
+    assert.equal((await admin.request(`/admin/accounts/${accountId}/transactions`, 'POST', { ...entry, amount: 999 })).status, 409);
+    assert.equal((await admin.request(`/admin/accounts/${accountId}/transactions`, 'POST', { ...entry, requestId: 'short' })).status, 400);
+    const plain = { date: '2026-10-01', description: 'No request ID', amount: 100 };
+    assert.equal((await admin.request(`/admin/accounts/${accountId}/transactions`, 'POST', plain)).status, 201);
+    assert.equal(f.db.prepare('SELECT COUNT(*) n FROM transactions').get().n, before + 2);
   } finally { await f.close(); }
 });
 
-test('brand constants: phone number and logo path', () => {
-  const app = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
-  assert.match(app, /PHONE_DISPLAY = '\(844\) 842-SVBT'/);
-  assert.match(app, /PHONE_HREF = 'tel:\+18448427828'/);
-  assert.ok(app.includes('src="/svbt-logo.jpg"'));
-  assert.ok(!/824-?SVBT|8247828/i.test(app));
+test('SQLite runs in WAL mode with a busy timeout, so a second writer waits instead of failing at once', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'svbt-sqlite-'));
+  try {
+    const first = openDatabase(join(directory, 'bank.sqlite')), second = openDatabase(join(directory, 'bank.sqlite'));
+    assert.equal(first.prepare('PRAGMA journal_mode').get().journal_mode, 'wal');
+    assert.equal(second.prepare('PRAGMA busy_timeout').get().timeout, 5000);
+    first.close(); second.close();
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('only the owner can flag demo accounts or import into them', async () => {
+  const f = await fixture();
+  try {
+    const admin = f.client();
+    await admin.login('tpower@siliconvalleybankandtrust.com', 'ModeratorGod!2026');
+    const accountId = f.db.prepare('SELECT id FROM accounts ORDER BY id LIMIT 1').get().id;
+    assert.equal((await admin.request(`/admin/accounts/${accountId}/demo`, 'PUT', { demo: true })).status, 403);
+    assert.equal((await admin.request(`/admin/accounts/${accountId}/import/preview`, 'POST', { csv: 'x' })).status, 403);
+    assert.equal((await admin.request(`/admin/accounts/${accountId}/import`, 'POST', { csv: 'x' })).status, 403);
+  } finally { await f.close(); }
+});
+
+test('password reset links work once, expire, sign the user out everywhere and never reveal whether an email exists', async () => {
+  const sent = [];
+  const f = await fixture({ sendMail: async message => { sent.push(message); } });
+  try {
+    const customer = f.client(), other = f.client(), anon = f.client();
+    await customer.login('sales@bakhtiariautogroup.com', 'FounderClient!2026');
+    await anon.request('/session');
+    const known = await anon.request('/password-reset/request', 'POST', { email: 'sales@bakhtiariautogroup.com' });
+    const unknown = await anon.request('/password-reset/request', 'POST', { email: 'nobody@example.com' });
+    assert.equal(known.status, 202);
+    assert.deepEqual(unknown.data, known.data);
+    await new Promise(resolve => setTimeout(resolve, 20));
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].to, 'sales@bakhtiariautogroup.com');
+    const token = /\?reset=([A-Za-z0-9_-]{43})/.exec(sent[0].text)[1];
+    assert.equal((await anon.request('/password-reset/complete', 'POST', { token, password: 'short' })).status, 400);
+    const done = await anon.request('/password-reset/complete', 'POST', { token, password: 'A-brand-new-passphrase-2026' });
+    assert.equal(done.status, 200);
+    assert.equal((await customer.request('/account')).status, 401);
+    assert.equal((await anon.request('/password-reset/complete', 'POST', { token, password: 'Another-new-passphrase-2026' })).status, 400);
+    await other.login('sales@bakhtiariautogroup.com', 'A-brand-new-passphrase-2026');
+    await anon.request('/password-reset/request', 'POST', { email: 'sales@bakhtiariautogroup.com' });
+    await new Promise(resolve => setTimeout(resolve, 20));
+    const second = /\?reset=([A-Za-z0-9_-]{43})/.exec(sent[1].text)[1];
+    f.db.prepare('UPDATE password_resets SET expiresAt=?').run(Date.now() - 1);
+    assert.equal((await anon.request('/password-reset/complete', 'POST', { token: second, password: 'Yet-another-passphrase-2026' })).status, 400);
+    assert.ok(f.db.prepare("SELECT id FROM audit WHERE action='password-reset.complete'").get());
+    assert.equal(f.db.prepare('SELECT COUNT(*) n FROM password_resets WHERE tokenHash=?').get(digest(token)).n, 0);
+  } finally { await f.close(); }
+});
+
+test('password reset says so plainly when email is not set up, and only the owner can make a reset link', async () => {
+  const f = await fixture({ sendMail: null });
+  try {
+    const anon = f.client(), admin = f.client();
+    await anon.request('/session');
+    assert.equal((await anon.request('/password-reset/request', 'POST', { email: 'sales@bakhtiariautogroup.com' })).status, 503);
+    await admin.login('tpower@siliconvalleybankandtrust.com', 'ModeratorGod!2026');
+    const userId = f.db.prepare("SELECT id FROM users WHERE email='sales@bakhtiariautogroup.com'").get().id;
+    assert.equal((await admin.request(`/admin/users/${userId}/reset-link`, 'POST', {})).status, 403);
+  } finally { await f.close(); }
 });

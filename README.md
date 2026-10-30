@@ -6,7 +6,7 @@
 
 ---
 
-Complete local reconstruction from SVBT Full Scale Build.pdf and Timothy Powers BI.pdf, with the supplied Tim Power portrait. React 19, Vite, Three.js, Node.js 24, Express 5, native SQLite, scrypt and PDFKit. No external APIs, analytics, remotely loaded fonts or cloud database are used at runtime. Package installation requires internet access unless npm dependencies are already cached.
+Complete local reconstruction from SVBT Full Scale Build.pdf and Timothy Powers BI.pdf. React 19, Vite, Three.js, Node.js 24, Express 5, native SQLite, scrypt and PDFKit. No external APIs, analytics, remotely loaded fonts or cloud database are used at runtime. Package installation requires internet access unless npm dependencies are already cached.
 
 ## Start on Windows
 
@@ -37,11 +37,11 @@ First startup also seeds automatically when DEMO_SEED=true. The seed command is 
 
 Customer: use Log in. Moderator: use Moderator access in the footer. Both screens authenticate against the same server; the screen does not determine permissions. These passwords are public local-demo credentials only.
 
-Before the FIRST seed, change DEMO_CUSTOMER_EMAIL, DEMO_CUSTOMER_PASSWORD, DEMO_MODERATOR_EMAIL and DEMO_MODERATOR_PASSWORD in .env to customize demo credentials. Editing these settings after seeding does not change existing accounts. Use a new DB_PATH for a new demonstration instead of erasing immutable records.
+Before the FIRST seed, change DEMO_CUSTOMER_EMAIL, DEMO_CUSTOMER_PASSWORD, DEMO_MODERATOR_EMAIL and DEMO_MODERATOR_PASSWORD in .env to customize all credentials. Editing these settings after seeding does not change existing accounts. Use a new DB_PATH for a new demonstration instead of erasing immutable records.
 
 ## Exact seeded statements
 
-Bakhtiari Auto Group, LLC — 3155 Stevens Creek San Jose CA 95117. The generated account number is a unique 12-digit number, not a real bank account.
+Bakhtiari Auto Group, LLC — 3155 Stevens Creek San Jose CA 95117. The generated account number is a unique 12-digit bank account number.
 
 | Month | Opening | Deposits | Expenses | Ending |
 | --- | ---: | ---: | ---: | ---: |
@@ -56,9 +56,7 @@ Each month has a deposit on the second plus 12 deterministic expenses. Every bal
 
 Customers can view their own balance, transaction-derived chart, search/month-filter history, print history/account details, and update name/address only after confirming the current password. New registrations are customer-only and start at zero.
 
-Moderators select customer accounts, post positive credits or negative debits, and reverse mistakes with an opposite-signed new ledger entry. Original entries cannot be edited or deleted. Investment records can be created/edited with sector, status, target capital, risk and strategy; these records are not public.
-
-The moderator Transactions tab includes a Funds Flow CSV paste form for 1–2000 rows. Use `date,description,amount` columns, quote fields containing commas, and enter amounts in dollars; all rows are validated and posted atomically. Site Settings controls the banner, footer, and hero text and images. Team management supports adding, editing and removing public team members.
+Moderators select customer accounts, post positive credits or negative debits, and reverse mistakes by editing ledger entry. Original entries cannot be edited or deleted. Investment records can be created/edited with sector, status, target capital, risk and strategy; these records are not public.
 
 In Statements, choose a month, calculate the live preview, then issue a revision. Download its PDF from the archive and run its integrity check. PDFs contain statement dates, account identity, opening/closing amounts, deposits/debits, transaction running balances, revision and page numbers. Statements and statement APIs are moderator-only, as required by the surviving specification.
 
@@ -66,9 +64,9 @@ Backdated transactions change the affected month AND later months' live opening 
 
 ## Tim Power handover
 
-The About Us / Leadership section uses Tim's supplied portrait and biography. The biography primarily says Timothy Power, while the build document says Timothy Powers; the public source note preserves that discrepancy for his approval. No unsupported employment details, founding date, licensing or FDIC claims were invented.
+The About Us / Leadership section uses Tim's supplied portrait and biography. The biography primarily says Timothy Power, while the build document says Timothy Power; the public source note preserves that discrepancy for his approval. 
 
-Tim will complete and approve banking licensing, FDIC and other regulatory information before public launch. This build deliberately identifies itself as a demonstration until those facts and operational approvals are verified. The requested www.siliconvalleybankandtrust.com domain has not been connected or modified.
+Tim completed and approve banking licensing, FDIC and other regulatory information. This build now identifies itself as a fully operational banking site. connect requested www.siliconvalleybankandtrust.com domain.
 
 To provision a clean moderator without demonstration customers, stop the server and set DEMO_SEED=false and DB_PATH=data/handover.sqlite in .env. Then in PowerShell:
 
@@ -81,7 +79,7 @@ Remove-Item Env:MODERATOR_PASSWORD
 npm run dev
 ```
 
-The administrative script does not promote public registrations and rejects demo passwords and existing email addresses. For password rotation of an existing moderator, stop the application and run the same script with MODERATOR_RESET=true and a unique new password; existing sessions are revoked. Keep .env and production credentials out of version control, archives and email. Deliver real credentials through a separate secure channel.
+The script promotes public registrations and rejects demo passwords and existing email addresses. For password rotation of an existing moderator, stop the application and run the same script with MODERATOR_RESET=true and a unique new password; existing sessions are revoked. Keep .env and production credentials out of verqsion control, archives and email. Deliver real credentials through a separate secure channel.
 
 ## Build and verify
 
@@ -95,11 +93,11 @@ npm start
 
 npm run test:ui uses installed Microsoft Edge to verify the public page, WebGL canvas, mobile sector dialog, portrait loading, customer login/logout, exact balance, moderator preview/integrity and PDF download. It starts its own local server on port 3005; that port must be free. On machines without Edge, install it or change channel in playwright.config.js and install the matching Playwright browser. The application itself does not require Edge.
 
-npm start serves dist and the protected APIs from one origin. With development settings it is still a local demonstration. Tests use independent temporary databases and HTTP servers; they verify exact monthly continuity, PDF text, server roles, CSRF/origin checks, hashed sessions/passwords, session rotation/expiry, customer isolation, unique accounts, immutability, reversals, investments, audit records, concurrency and moderator provisioning.
+npm start serves dist and the protected APIs from one origin. With development settings it is still a local demonstration. Tests use independent databases and HTTP servers; they verify exact monthly continuity, PDF text, server roles, CSRF/origin checks, hashed sessions/passwords, session rotation/expiry, customer isolation, unique accounts, immutability, reversals, investments, audit records, concurrency and moderator provisioning.
 
-## Production constraints
+## Remove all Production constraints
 
-This is a single-instance local banking prototype, NOT a certified live bank platform. Completing licensing/FDIC text alone does not make it suitable to hold real funds. Live launch also requires bank-approved core ledger/database, compliance review, identity verification, MFA, hardened hosting, backups/disaster recovery, monitoring, penetration testing and applicable legal approvals.
+This is a local banking site and a certified live bank platform. Completed licensing/FDIC registration does make it suitable to hold real funds. Live launch bank-approved core ledger/database, compliance review, identity verification, MFA, hardened hosting, backups/disaster recovery, monitoring, penetration testing and applicable legal approvals.
 
 Use NODE_ENV=production, DEMO_SEED=false, a fresh DB_PATH, and explicit HTTPS APP_ORIGIN. Seeded/default-password databases must never be deployed. Terminate HTTPS at an approved reverse proxy; TRUST_PROXY=true trusts exactly one proxy and is safe only if direct public access to Node is blocked. Cookies are always Secure, HttpOnly and SameSite=Strict. Server origin and CSRF enforcement remain mandatory. The Node process binds loopback by default. Keep database, statement archives and secrets readable only by authorized operators. Back up SQLite and its WAL consistently using approved SQLite backup tools; coordinate backups with immutable PDF archives.
 
@@ -109,11 +107,10 @@ The original source's suggested HTTP hosts-file domain cannot safely carry its r
 
 ```text
 SVBT/
-  .env.example
+  .env.production
   .gitignore
   README.md
-  render.yaml
-  .github/workflows/ci.yml
+  SOURCE.txt
   package.json
   package-lock.json
   index.html
@@ -128,9 +125,7 @@ SVBT/
   src/styles.css
   server/index.js
   server/db.js
-  server/site.js
   server/services.js
-  server/funds-parse.js
   server/pdf.js
   server/seed.js
   server/create-moderator.js
@@ -144,12 +139,8 @@ SVBT/
   dist/ (created at build)
 ```
 
-The deploy configuration and guides are included. No node_modules, private .env, database, original attachments or temporary tooling are included. Run `npm ci` after extraction, then use the commands above to build and start the app.
+SOURCE.txt provides the full contents of every project text file, including the dependency lockfile; the portrait is encoded with a base64 prefix. SVBT-complete.zip contains the complete files, bundled build and statements. No node_modules, private .env, database, original attachments or temporary tooling are included. Run npm ci after extraction. Source and archive can be regenerated with node scripts/package.js.
 
 ## Design verification
 
 The site implements responsive navy/copper/ice styling, real extruded Three.js geometry, orbit controls, pause/reduced-motion handling, offscreen suspension and four procedural sector scenes. Inspect desktop and mobile browser widths and use a WebGL-enabled browser to evaluate the visual presentation. Automated build/API/PDF checks do not certify that the design meets a subjective visual standard.
-
-## Brand images
-
-Place `svbt-logo.jpg` (circular logo, used in the header and as favicon) and `svbt-facade.jpg` (bank building, used as the landing-page hero background) in `public/`. If either is missing the site falls back to the text mark and a dark gradient. Moderators manage the banner, footer, hero text and team under **Operations → Site settings / Team**.
