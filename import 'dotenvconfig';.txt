@@ -1,0 +1,11 @@
+import 'dotenv/config';
+
+for (const key of [
+  'MODERATOR_EMAIL',
+  'MODERATOR_PASSWORD',
+  'DEMO_CUSTOMER_EMAIL',
+  'DEMO_CUSTOMER_PASSWORD',
+  'DEMO_MODERATOR_EMAIL',
+  'DEMO_MODERATOR_PASSWORD',
+  'EXTERNAL_DAILY_LIMIT',
+]) delete process.env[key];
