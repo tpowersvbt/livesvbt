@@ -16,8 +16,6 @@ export const SETTLEMENT_NAME = 'SVBT External Settlement - Bank of America';
 export const STATUS = { PENDING: 'pending', SETTLED: 'settled', RETURNED: 'returned' };
 export const DAILY_LIMIT = Number(process.env.EXTERNAL_DAILY_LIMIT || 50000_00);
 
-export function today() { return new Date().toISOString().slice(0, 10); }
-
 export function reference(id) { return `EXT${String(id).padStart(8, '0')}`; }
 
 // ABA routing checksum (weights 3,7,1 over the first 8 digits mod 10).
