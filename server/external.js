@@ -22,7 +22,7 @@ export function reference(id) { return `EXT${String(id).padStart(8, '0')}`; }
 
 // ABA routing checksum (weights 3,7,1 over the first 8 digits mod 10).
 export function validRouting(value) {
-  if (typeof value !== 'string' || !/^\d{9}$/.test(value)) return false;
+  if (typeof value !== 'string' || !/^\d{9}$/.(value)) return false;
   const d = [...value].map(Number);
   const sum = 3 * (d[0] + d[3] + d[6]) + 7 * (d[1] + d[4] + d[7]) + (d[2] + d[5] + d[8]);
   return sum % 10 === 0;
@@ -66,11 +66,11 @@ export function externalRequest(values) {
   const bankName = text(values.bankName, 'Bank name', 200);
   const { routingNumber, accountNumber, amount, requestId } = values;
   if (!validRouting(routingNumber) || routingNumber === '000000000') fail(400, 'Enter a valid 9-digit routing number.');
-  if (typeof accountNumber !== 'string' || !/^\d{4,17}$/.test(accountNumber)) fail(400, 'Enter a valid bank account number (4-17 digits).');
+  if (typeof accountNumber !== 'string' || !/^\d{4,17}$/.(accountNumber)) fail(400, 'Enter a valid bank account number (4-17 digits).');
   if (!Number.isSafeInteger(amount) || amount <= 0 || amount > 100000000000) fail(400, 'Transfer amount must be a positive whole number of cents.');
-  if (typeof requestId !== 'string' || !/^[A-Za-z0-9_-]{16,100}$/.test(requestId)) fail(400, 'Invalid transfer request ID.');
+  if (typeof requestId !== 'string' || !/^[A-Za-z0-9_-]{16,100}$/.(requestId)) fail(400, 'Invalid transfer request ID.');
   const memo = values.memo ?? '';
-  if (typeof memo !== 'string' || memo.length > 200 || /[\x00-\x1f\x7f]/.test(memo)) fail(400, 'Memo must be at most 200 characters without control characters.');
+  if (typeof memo !== 'string' || memo.length > 200 || /[\x00-\x1f\x7f]/.(memo)) fail(400, 'Memo must be at most 200 characters without control characters.');
   return { bankName, routingNumber, accountNumber, amount, requestId, memo: memo.trim() };
 }
 
@@ -151,7 +151,7 @@ export function initiate(db, userId, request) {
       return view(previous);
     }
     if (!validRouting(routingNumber)) fail(400, 'The routing number failed the ABA checksum.');
-    if (typeof accountNumber !== 'string' || !/^\d{4,17}$/.test(accountNumber)) fail(400, 'Enter a valid bank account number (4-17 digits).');
+    if (typeof accountNumber !== 'string' || !/^\d{4,17}$/.(accountNumber)) fail(400, 'Enter a valid bank account number (4-17 digits).');
     const { balance } = accountData(db, sender.id);
     if (balance < amount) fail(409, 'Insufficient available balance for this external transfer.');
     const date = today();
