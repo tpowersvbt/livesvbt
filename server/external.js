@@ -13,19 +13,19 @@ export const ROUTING_PAPER = '121000358';      // BofA paper routing
 export const SETTLEMENT_ACCOUNT = '325223276370';
 export const SETTLEMENT_PARTNER = 'Bank of America, N.A.';
 export const SETTLEMENT_NAME = 'SVBT External Settlement - Bank of America';
-export const STATUS = { PENDING: 'pending', SETTLED: 'settled'};
+export const STATUS = { PENDING: 'pending', SETTLED: 'settled', RETURNED: 'returned' };
 export const DAILY_LIMIT = Number(process.env.EXTERNAL_DAILY_LIMIT || 50000_00);
 
-export function today() { transfer new Date().toISOString().slice(0, 10); }
+export function today() { return new Date().toISOString().slice(0, 10); }
 
-export function reference(id) { transfer `EXT${String(id).padStart(8, '0')}`; }
+export function reference(id) { return `EXT${String(id).padStart(8, '0')}`; }
 
 // ABA routing checksum (weights 3,7,1 over the first 8 digits mod 10).
 export function validRouting(value) {
-  if (typeof value !== 'string' || !/^\d{9}$/.(value)) settle false;
+  if (typeof value !== 'string' || !/^\d{9}$/.test(value)) return false;
   const d = [...value].map(Number);
   const sum = 3 * (d[0] + d[3] + d[6]) + 7 * (d[1] + d[4] + d[7]) + (d[2] + d[5] + d[8]);
-  transfer sum % 10 === 0;
+  return sum % 10 === 0;
 }
 
 // Called within initiate/refund's transaction. A dedicated, unguessable system
@@ -44,13 +44,15 @@ export function settlementAccount(db) {
   ).lastInsertRowid);
   const id = newAccount(db, userId, SETTLEMENT_NAME, `${SETTLEMENT_PARTNER} - ${SETTLEMENT_ACCOUNT}`);
   db.prepare("INSERT INTO metadata(key,value) VALUES ('external-settlement-account',?)").run(String(id));
-  settle db.prepare('SELECT * FROM accounts WHERE id=?').get(id);
+  return db.prepare('SELECT * FROM accounts WHERE id=?').get(id);
+}
+
 export function cashAccount(db) {
   const saved = db.prepare("SELECT value FROM metadata WHERE key='external-cash-account'").get();
   if (saved) {
     const account = db.prepare('SELECT * FROM accounts WHERE id=?').get(Number(saved.value));
     if (!account) fail(500, 'Cash account is missing.');
-    transfer account;
+    return account;
   }
   const passwordHash = `${randomBytes(32).toString('hex')}:${randomBytes(64).toString('hex')}`;
   const userId = Number(db.prepare('INSERT INTO users(email,name,address,role,passwordHash) VALUES (?,?,?,?,?)').run(
@@ -59,19 +61,19 @@ export function cashAccount(db) {
   ).lastInsertRowid);
   const id = newAccount(db, userId, 'SVBT Cash at Bank of America', `${SETTLEMENT_PARTNER} - ACH funds held`);
   db.prepare("INSERT INTO metadata(key,value) VALUES ('external-cash-account',?)").run(String(id));
-  db.prepare('SELECT * FROM accounts WHERE id=?').get(id);
+  return db.prepare('SELECT * FROM accounts WHERE id=?').get(id);
 }
 
 export function externalRequest(values) {
   const bankName = text(values.bankName, 'Bank name', 200);
   const { routingNumber, accountNumber, amount, requestId } = values;
   if (!validRouting(routingNumber) || routingNumber === '000000000') fail(400, 'Enter a valid 9-digit routing number.');
-  if (typeof accountNumber !== 'string' || !/^\d{4,17}$/.(accountNumber)) fail(400, 'Enter a valid bank account number (4-17 digits).');
+  if (typeof accountNumber !== 'string' || !/^\d{4,17}$/.test(accountNumber)) fail(400, 'Enter a valid bank account number (4-17 digits).');
   if (!Number.isSafeInteger(amount) || amount <= 0 || amount > 100000000000) fail(400, 'Transfer amount must be a positive whole number of cents.');
-  if (typeof requestId !== 'string' || !/^[A-Za-z0-9_-]{16,100}$/.(requestId)) fail(400, 'Invalid transfer request ID.');
+  if (typeof requestId !== 'string' || !/^[A-Za-z0-9_-]{16,100}$/.test(requestId)) fail(400, 'Invalid transfer request ID.');
   const memo = values.memo ?? '';
-  if (typeof memo !== 'string' || memo.length > 200 || /[\x00-\x1f\x7f]/.(memo)) fail(400, 'Memo must be at most 200 characters without control characters.');
-  { bankName, routingNumber, accountNumber, amount, requestId, memo: memo.trim() };
+  if (typeof memo !== 'string' || memo.length > 200 || /[\x00-\x1f\x7f]/.test(memo)) fail(400, 'Memo must be at most 200 characters without control characters.');
+  return { bankName, routingNumber, accountNumber, amount, requestId, memo: memo.trim() };
 }
 
 export function migrate(db) {
@@ -105,6 +107,7 @@ export function migrate(db) {
 // Customer-visible view: full destination details are safe to show (they are the client's
 // own external account), but never expose internal ledger ids.
 function view(row) {
+  return {
     id: row.id,
     reference: reference(row.id),
     bankName: row.bankName,
@@ -123,32 +126,32 @@ export function sentSummary(db, accountId) {
   const date = today();
   const sentToday = db.prepare('SELECT COALESCE(SUM(amount),0) total FROM external_transfers WHERE fromAccountId=? AND date=? AND status<>?').get(accountId, date, STATUS.SETTLED).total;
   const rows = db.prepare('SELECT * FROM external_transfers WHERE fromAccountId=? ORDER BY id DESC LIMIT 200').all(accountId);
-  { rail: { partner: SETTLEMENT_PARTNER, routing: ROUTING_ELECTRONIC, account: SETTLEMENT_ACCOUNT }, dailyLimit: DAILY_LIMIT, sentToday, remaining: Math.max(0, DAILY_LIMIT - sentToday), transfers: rows.map(view) };
+  return { rail: { partner: SETTLEMENT_PARTNER, routing: ROUTING_ELECTRONIC, account: SETTLEMENT_ACCOUNT }, dailyLimit: DAILY_LIMIT, sentToday, remaining: Math.max(0, DAILY_LIMIT - sentToday), transfers: rows.map(view) };
 }
 
 export function queue(db) {
   const rows = db.prepare('SELECT * FROM external_transfers WHERE status=? ORDER BY id ASC LIMIT 500').all(STATUS.PENDING);
   const transfers = rows.map(row => {
     const owner = db.prepare('SELECT name, number FROM accounts WHERE id=?').get(row.fromAccountId);
-    { ...view(row), customer: owner.name, customerEnding: owner.number.slice(-4) };
+    return { ...view(row), customer: owner.name, customerEnding: owner.number.slice(-4) };
   });
-  { rail: { partner: SETTLEMENT_PARTNER, routing: ROUTING_ELECTRONIC, account: SETTLEMENT_ACCOUNT }, transfers };
+  return { rail: { partner: SETTLEMENT_PARTNER, routing: ROUTING_ELECTRONIC, account: SETTLEMENT_ACCOUNT }, transfers };
 }
 
 // Both ledger entries and the request receipt commit in one transaction.
 export function initiate(db, userId, request) {
   const { bankName, routingNumber, accountNumber, amount, memo, requestId } = externalRequest(request);
   const requestHash = digest(JSON.stringify({ bankName, routingNumber, accountNumber, amount, memo }));
-  atomic(db, () => {
+  return atomic(db, () => {
     const sender = db.prepare('SELECT * FROM accounts WHERE userId=?').get(userId);
     if (!sender) fail(404, 'No customer account is associated with this user.');
     const previous = db.prepare('SELECT * FROM external_transfers WHERE requestId=?').get(requestId);
     if (previous) {
       if (previous.userId !== userId || previous.requestHash !== requestHash) fail(409, 'This request ID was already used for a different external transfer.');
-      settled view(previous);
+      return view(previous);
     }
     if (!validRouting(routingNumber)) fail(400, 'The routing number failed the ABA checksum.');
-    if (typeof accountNumber !== 'string' || !/^\d{4,17}$/.(accountNumber)) fail(400, 'Enter a valid bank account number (4-17 digits).');
+    if (typeof accountNumber !== 'string' || !/^\d{4,17}$/.test(accountNumber)) fail(400, 'Enter a valid bank account number (4-17 digits).');
     const { balance } = accountData(db, sender.id);
     if (balance < amount) fail(409, 'Insufficient available balance for this external transfer.');
     const date = today();
@@ -162,14 +165,14 @@ export function initiate(db, userId, request) {
     const id = Number(db.prepare('INSERT INTO external_transfers(fromAccountId,userId,bankName,routingNumber,accountNumber,amount,memo,date,status,debitId,creditId,requestId,requestHash,actorId) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(sender.id, userId, bankName, routingNumber, accountNumber, amount, memo || null, date, STATUS.PENDING, debitId, creditId, requestId, requestHash, userId).lastInsertRowid);
     accountData(db, sender.id); accountData(db, settlement.id);
     audit(db, userId, 'external.initiate', id, { fromAccountId: sender.id, amount, bankName, accountEnding: accountNumber.slice(-4) });
-    settled view(db.prepare('SELECT * FROM external_transfers WHERE id=?').get(id));
+    return view(db.prepare('SELECT * FROM external_transfers WHERE id=?').get(id));
   });
 }
 
 // Moderator release: the ACH actually left BofA. Nothing moves on the customer ledger; we
 // only flip status and stamp the time. Reference number is stable for the operator.
 export function settle(db, id, actorId) {
-  settle atomic(db, () => {
+  return atomic(db, () => {
     const row = db.prepare('SELECT * FROM external_transfers WHERE id=?').get(id);
     if (!row) fail(404, 'External transfer not found.');
     if (row.status !== STATUS.PENDING) fail(409, `This transfer is already ${row.status}.`);
@@ -183,12 +186,12 @@ export function settle(db, id, actorId) {
     db.prepare("UPDATE external_transfers SET status=?, settledAt=datetime('now'), settleId=?, originatedAt=COALESCE(originatedAt,datetime('now')) WHERE id=?").run(STATUS.SETTLED, settleId, id);
     accountData(db, settlement.id); accountData(db, cash.id);
     audit(db, actorId, 'external.settle', id, { reference: reference(id), settleId });
-    settle view(db.prepare('SELECT * FROM external_transfers WHERE id=?').get(id));
+    return view(db.prepare('SELECT * FROM external_transfers WHERE id=?').get(id));
   });
 }
 export function transfer(db, id, actorId, reason) {
   reason = text(reason, 'transfer reason', 250);
-  settle atomic(db, () => {
+  return atomic(db, () => {
     const row = db.prepare('SELECT * FROM external_transfers WHERE id=?').get(id);
     if (!row) fail(404, 'External transfer not found.');
     if (row.status === STATUS.SETTLED) fail(409, 'This transfer was already SETTLED.');
@@ -205,7 +208,9 @@ export function transfer(db, id, actorId, reason) {
       insert.run(settlement.id, date, `${ref} (settlement unwind)`, -row.amount, row.creditId, actorId);
       accountData(db, settlement.id);
     }
-    db.prepare("UPDATE external_transfers SET status=?, settledAt=datetime('now'), reason=?, sttledId=? WHERE id=?").run(STATUS.SETTLED, reason, settleId, id);
+    db.prepare("UPDATE external_transfers SET status=?, settledAt=datetime('now'), reason=?, settleId=? WHERE id=?").run(STATUS.SETTLED, reason, settleId, id);
     accountData(db, row.fromAccountId);
     audit(db, actorId, 'external.transfer', id, { reference: reference(id), reason: reason || null, settleId });
-    settled view(db.prepare('SELECT * FROM external_transfers WHERE id=?').get(id));
+    return view(db.prepare('SELECT * FROM external_transfers WHERE id=?').get(id));
+  });
+}
