@@ -45,6 +45,21 @@ export function settlementAccount(db) {
   const id = newAccount(db, userId, SETTLEMENT_NAME, `${SETTLEMENT_PARTNER} - ${SETTLEMENT_ACCOUNT}`);
   db.prepare("INSERT INTO metadata(key,value) VALUES ('external-settlement-account',?)").run(String(id));
   return db.prepare('SELECT * FROM accounts WHERE id=?').get(id);
+export function cashAccount(db) {
+  const saved = db.prepare("SELECT value FROM metadata WHERE key='external-cash-account'").get();
+  if (saved) {
+    const account = db.prepare('SELECT * FROM accounts WHERE id=?').get(Number(saved.value));
+    if (!account) fail(500, 'Cash account is missing.');
+    return account;
+  }
+  const passwordHash = `${randomBytes(32).toString('hex')}:${randomBytes(64).toString('hex')}`;
+  const userId = Number(db.prepare('INSERT INTO users(email,name,address,role,passwordHash) VALUES (?,?,?,?,?)').run(
+    `external-cash-${randomBytes(16).toString('hex')}@internal.invalid`, 'SVBT Cash at Bank of America',
+    SETTLEMENT_PARTNER, 'customer', passwordHash
+  ).lastInsertRowid);
+  const id = newAccount(db, userId, 'SVBT Cash at Bank of America', `${SETTLEMENT_PARTNER} - ACH funds held`);
+  db.prepare("INSERT INTO metadata(key,value) VALUES ('external-cash-account',?)").run(String(id));
+  return db.prepare('SELECT * FROM accounts WHERE id=?').get(id);
 }
 
 export function externalRequest(values) {
@@ -161,8 +176,16 @@ export function settle(db, id, actorId) {
     const row = db.prepare('SELECT * FROM external_transfers WHERE id=?').get(id);
     if (!row) fail(404, 'External transfer not found.');
     if (row.status !== STATUS.PENDING) fail(409, `This transfer is already ${row.status}.`);
-    db.prepare("UPDATE external_transfers SET status=?, settledAt=datetime('now') WHERE id=?").run(STATUS.SETTLED, id);
-    audit(db, actorId, 'external.settle', id, { reference: reference(id) });
+    const settlement = settlementAccount(db);
+    const cash = cashAccount(db);
+    const date = today();
+    const ref = `External ACH settlement ${reference(id)}`;
+    const insert = db.prepare('INSERT INTO transactions(accountId,date,description,amount,reversalOf,actorId) VALUES (?,?,?,?,?,?)');
+    const settleId = Number(insert.run(cash.id, date, ref, row.amount, null, actorId).lastInsertRowid);
+    insert.run(settlement.id, date, `${ref} (settlement release)`, -row.amount, null, actorId);
+    db.prepare("UPDATE external_transfers SET status=?, settledAt=datetime('now'), settleId=?, originatedAt=COALESCE(originatedAt,datetime('now')) WHERE id=?").run(STATUS.SETTLED, settleId, id);
+    accountData(db, settlement.id); accountData(db, cash.id);
+    audit(db, actorId, 'external.settle', id, { reference: reference(id), settleId });
     return view(db.prepare('SELECT * FROM external_transfers WHERE id=?').get(id));
   });
 }
@@ -175,15 +198,20 @@ export function refund(db, id, actorId, reason) {
     const row = db.prepare('SELECT * FROM external_transfers WHERE id=?').get(id);
     if (!row) fail(404, 'External transfer not found.');
     if (row.status === STATUS.RETURNED) fail(409, 'This transfer was already returned.');
-    const settlement = settlementAccount(db);
     const date = today();
     const ref = `External ACH return ${reference(id)}`;
     const insert = db.prepare('INSERT INTO transactions(accountId,date,description,amount,reversalOf,actorId) VALUES (?,?,?,?,?,?)');
     const returnId = Number(insert.run(row.fromAccountId, date, `${ref}${reason ? `: ${reason}` : ''}`, row.amount, row.debitId, actorId).lastInsertRowid);
-    insert.run(settlement.id, date, `${ref} (settlement unwind)`, -row.amount, row.creditId, actorId);
+    if (row.settleId) {
+      const cash = cashAccount(db);
+      insert.run(cash.id, date, `${ref} (held funds returned)`, -row.amount, row.settleId, actorId);
+      accountData(db, cash.id);
+    } else {
+      const settlement = settlementAccount(db);
+      insert.run(settlement.id, date, `${ref} (settlement unwind)`, -row.amount, row.creditId, actorId);
+      accountData(db, settlement.id);
+    }
     db.prepare("UPDATE external_transfers SET status=?, returnedAt=datetime('now'), reason=?, returnId=? WHERE id=?").run(STATUS.RETURNED, reason, returnId, id);
-    accountData(db, row.fromAccountId); accountData(db, settlement.id);
+    accountData(db, row.fromAccountId);
     audit(db, actorId, 'external.return', id, { reference: reference(id), reason: reason || null, returnId });
     return view(db.prepare('SELECT * FROM external_transfers WHERE id=?').get(id));
-  });
-}
