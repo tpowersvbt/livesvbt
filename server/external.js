@@ -16,6 +16,8 @@ export const SETTLEMENT_NAME = 'SVBT External Settlement - Bank of America';
 export const STATUS = { PENDING: 'pending', SETTLED: 'settled', RETURNED: 'returned' };
 export const DAILY_LIMIT = Number(process.env.EXTERNAL_DAILY_LIMIT || 50000_00);
 
+export function today() { return new Date().toISOString().slice(0, 10); }
+
 export function reference(id) { return `EXT${String(id).padStart(8, '0')}`; }
 
 // ABA routing checksum (weights 3,7,1 over the first 8 digits mod 10).
@@ -87,13 +89,15 @@ export function migrate(db) {
       amount INTEGER NOT NULL CHECK(typeof(amount)='integer' AND amount>0 AND amount<=100000000000),
       memo TEXT,
       date TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','settled')),
+      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','settled','returned')),
       debitId INTEGER,
       creditId INTEGER,
+      returnId INTEGER,
       requestId TEXT NOT NULL,
       requestHash TEXT NOT NULL,
       actorId INTEGER,
       settledAt TEXT,
+      returnedAt TEXT,
       reason TEXT,
       createdAt TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -122,7 +126,7 @@ function view(row) {
 
 export function sentSummary(db, accountId) {
   const date = today();
-  const sentToday = db.prepare('SELECT COALESCE(SUM(amount),0) total FROM external_transfers WHERE fromAccountId=? AND date=? AND status<>?').get(accountId, date, STATUS.SETTLED).total;
+  const sentToday = db.prepare('SELECT COALESCE(SUM(amount),0) total FROM external_transfers WHERE fromAccountId=? AND date=? AND status<>?').get(accountId, date, STATUS.RETURNED).total;
   const rows = db.prepare('SELECT * FROM external_transfers WHERE fromAccountId=? ORDER BY id DESC LIMIT 200').all(accountId);
   return { rail: { partner: SETTLEMENT_PARTNER, routing: ROUTING_ELECTRONIC, account: SETTLEMENT_ACCOUNT }, dailyLimit: DAILY_LIMIT, sentToday, remaining: Math.max(0, DAILY_LIMIT - sentToday), transfers: rows.map(view) };
 }
@@ -187,28 +191,25 @@ export function settle(db, id, actorId) {
     return view(db.prepare('SELECT * FROM external_transfers WHERE id=?').get(id));
   });
 }
-export function transfer(db, id, actorId, reason) {
-  reason = text(reason, 'transfer reason', 250);
+
+// Return: a REAL ACH rejection/return from the receiving bank (e.g. R01). Only a pending
+// item can be returned; the customer's original debit is credited back against the
+// settlement book. This never marks the item settled and never books a transfer-out entry.
+export function refund(db, id, actorId, reason) {
+  reason = text(reason, 'Return reason', 250);
   return atomic(db, () => {
     const row = db.prepare('SELECT * FROM external_transfers WHERE id=?').get(id);
     if (!row) fail(404, 'External transfer not found.');
-    if (row.status === STATUS.SETTLED) fail(409, 'This transfer was already SETTLED.');
+    if (row.status !== STATUS.PENDING) fail(409, `This transfer is already ${row.status} and cannot be returned.`);
+    const settlement = settlementAccount(db);
     const date = today();
-    const ref = `External ACH transfer ${reference(id)}`;
+    const ref = `External ACH transfer returned/rejected ${reference(id)}`;
     const insert = db.prepare('INSERT INTO transactions(accountId,date,description,amount,reversalOf,actorId) VALUES (?,?,?,?,?,?)');
-    const settleId = Number(insert.run(row.fromAccountId, date, `${ref}${reason ? `: ${reason}` : ''}`, row.amount, row.debitId, actorId).lastInsertRowid);
-    if (row.settleId) {
-      const cash = cashAccount(db);
-      insert.run(cash.id, date, `${ref} (funds transferred )`, -row.amount, row.settleId, actorId);
-      accountData(db, cash.id);
-    } else {
-      const settlement = settlementAccount(db);
-      insert.run(settlement.id, date, `${ref} (settlement unwind)`, -row.amount, row.creditId, actorId);
-      accountData(db, settlement.id);
-    }
-    db.prepare("UPDATE external_transfers SET status=?, settledAt=datetime('now'), reason=?, settleId=? WHERE id=?").run(STATUS.SETTLED, reason, settleId, id);
-    accountData(db, row.fromAccountId);
-    audit(db, actorId, 'external.transfer', id, { reference: reference(id), reason: reason || null, settleId });
+    const returnId = Number(insert.run(row.fromAccountId, date, `External ACH transfer returned/rejected: ${reason}`, row.amount, row.debitId, actorId).lastInsertRowid);
+    insert.run(settlement.id, date, `${ref} (settlement unwind)`, -row.amount, row.creditId, actorId);
+    db.prepare("UPDATE external_transfers SET status=?, returnedAt=datetime('now'), reason=?, returnId=? WHERE id=?").run(STATUS.RETURNED, reason, returnId, id);
+    accountData(db, row.fromAccountId); accountData(db, settlement.id);
+    audit(db, actorId, 'external.return', id, { reference: reference(id), reason, returnId });
     return view(db.prepare('SELECT * FROM external_transfers WHERE id=?').get(id));
   });
 }
