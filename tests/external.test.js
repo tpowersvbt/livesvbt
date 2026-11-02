@@ -80,14 +80,22 @@ test('external transfer requires PIN, debits once, settles, returns once and pre
     assert.equal((await admin.request(`/admin/external/${id}/settle`,'POST',{})).status,409);
     assert.equal(balance(f.db,f.from.id),initial-body.amount);
     assert.equal((await admin.request('/admin/external')).data.transfers.length,0);
-    assert.equal((await admin.request(`/admin/external/${id}/cashId lookup + assert.equal(balance(f.db, cashId), body.amount)`,'POST',{reason:'Test return'})).data.status,'returned');
-    assert.equal((await admin.request(`/admin/external/${id}/cashId lookup + assert.equal(balance(f.db, cashId), body.amount)`,'POST',{reason:'Repeat'})).status,409);
-    assert.equal(balance(f.db,f.from.id),initial); assert.equal(balance(f.db,settlementId),0);
-    assert.ok(f.db.prepare('SELECT returnId FROM external_transfers WHERE id=?').get(id).returnId);
-    assert.equal((await f.sender.request('/external')).data.sentToday,0);
+    // Return path = a real ACH rejection only: a settled item cannot be returned.
+    assert.equal((await admin.request(`/admin/external/${id}/return`,'POST',{reason:'R01'})).status,409);
+    const pending = await f.sender.request('/external/transfer','POST',request({amount:5000}));
+    assert.equal(pending.status,201,JSON.stringify(pending.data));
+    const rid = pending.data.id, beforeReturn = balance(f.db,f.from.id);
+    assert.equal((await admin.request(`/admin/external/${rid}/return`,'POST',{})).status,400);
+    assert.equal((await admin.request(`/admin/external/${rid}/return`,'POST',{reason:'   '})).status,400);
+    const returned = await admin.request(`/admin/external/${rid}/return`,'POST',{reason:'R01'});
+    assert.equal(returned.status,200,JSON.stringify(returned.data)); assert.equal(returned.data.status,'returned'); assert.equal(returned.data.reason,'R01');
+    assert.equal((await admin.request(`/admin/external/${rid}/return`,'POST',{reason:'R01'})).status,409);
+    assert.equal(balance(f.db,f.from.id),beforeReturn+5000);
+    assert.ok(f.db.prepare('SELECT returnId FROM external_transfers WHERE id=?').get(rid).returnId);
+    const entry = f.db.prepare('SELECT description FROM transactions WHERE accountId=? ORDER BY id DESC LIMIT 1').get(f.from.id).description;
+    assert.match(entry,/returned\/rejected: R01/); assert.doesNotMatch(entry,/funds transferred/);
+    assert.equal((await f.sender.request('/external')).data.sentToday,body.amount);
     assert.equal((await f.recipient.request('/external')).data.transfers.length,0);
-    assert.equal((await f.sender.request('/external/transfer','POST',body)).data.status,'returned');
-    assert.equal(balance(f.db,f.from.id),initial);
   } finally { await f.close(); }
 });
 
