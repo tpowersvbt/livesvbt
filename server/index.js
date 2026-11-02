@@ -474,7 +474,11 @@ export async function createApp(options = {}) {
     app.use('/api/admin', moderator);
     app.get('/api/admin/external', (req, res) => res.json(externalQueue(db)));
     app.post('/api/admin/external/:id/settle', (req, res) => res.json(externalSettle(db, identifier(req.params.id), req.user.id)));
-    app.post('/api/admin/external/:id/return', (req, res) => res.json(externalRefund(db, identifier(req.params.id), req.user.id, req.body.reason)));
+    app.post('/api/admin/external/:id/return', (req, res) => {
+      const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
+      if (!reason) return res.status(400).json({ error: 'A return/rejection reason (e.g. R01) is required.' });
+      res.json(externalRefund(db, identifier(req.params.id), req.user.id, reason));
+    });
     installAdministration(app, db, authenticate);
     app.get('/api/admin/leadership', (req, res) => res.json(leadership(db)));
     app.put('/api/admin/leadership', (req, res) => res.json(updateLeadership(db, req.body, req.user.id)));
