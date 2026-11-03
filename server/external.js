@@ -189,7 +189,9 @@ export function settleExternal(db, id, status) {
 export function externalQueue(db) {
   const rows = db.prepare("SELECT * FROM external_transfers WHERE status='pending' ORDER BY id DESC LIMIT 500").all();
   return { pending: rows.map(externalView), count: rows.length };
-  export async function initiate() {
-  return { status: 'ok' };
+  // ... end of previous function
 }
+
+export async function initiate() {
+  return { status: 'ok' };
 }
