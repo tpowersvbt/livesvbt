@@ -14,21 +14,6 @@ export function routeValid(value) {
   return (3 * (d[0] + d[3] + d[6]) + 7 * (d[1] + d[4] + d[7]) + (d[2] + d[5] + d[8])) % 10 === 0;
 }
 
-
-
-import { useEffect, useState } from 'react';
-import { Modal } from './App.jsx';
-
-const money = value => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format((value || 0) / 100);
-
-// 9-digit ABA routing checksum, mirrored from server/external.js so typos are
-// caught before the request even leaves the browser.
-export function routeValid(value) {
-  if (!/^\d{9}$/.test(String(value))) return false;
-  const d = [...String(value)].map(Number);
-  return (3 * (d[0] + d[3] + d[6]) + 7 * (d[1] + d[4] + d[7]) + (d[2] + d[5] + d[8])) % 10 === 0;
-}
-
 function cents(value) {
   if (!/^-?\d+(\.\d{1,2})?$/.test(String(value))) throw new Error('Enter a USD amount with no more than two decimal places.');
   const result = Math.round(Number(value) * 100);
