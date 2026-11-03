@@ -1,7 +1,3 @@
-/*
- * SVBT EXTERNAL TRANSFERS
- * Sends funds from a customer's SVBT account OUT to an external bank account
- */
 import { useEffect, useState } from 'react';
 import { Modal } from './App.jsx';
 
