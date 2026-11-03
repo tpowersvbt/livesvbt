@@ -1,0 +1,502 @@
+openapi: 3.0.2
+info:
+  description: |
+    Moov ACHGateway is an extensible, highly-available, distributed, and fault-tolerant ACH uploader and downloader. ACHGateway creates events for outside services and transforms files prior to upload to fit real-world requirements of production systems.
+
+    Refer to the documentation site for more information on running ACHGateway. https://moov-io.github.io/achgateway/
+  version: v1
+  title: ACHGateway API
+  contact:
+    url: https://github.com/moov-io/achgateway
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+
+servers: []
+
+tags:
+  - name: Files
+    description: Endpoint for submitting files to ACHGateway for later upload.
+  - name: Shards
+    description: |
+      Shards are logical grouping for ACH file delivery. They are designed to allow a large number of identifiers map to a small number
+      of upload agents and schedules. This allows customization to match business and banking requirements. Identifiers can be random
+      values (e.g. UUIDs) with shard names (e.g. testing, SD-live).
+  - name: Operations
+    description: |
+      Endpoints for monitoring ACHGateway and triggering manual steps outside of the automated processes.
+
+      There are endpoints for liveness/readiness checks and Prometheus metrics. The [`admin` package from `moov-io/base` describes these endpoints](https://github.com/moov-io/base/tree/master/admin#endpoints).
+
+paths:
+  /shards/{shardKey}/files/{fileID}:
+    post:
+      description: |
+        Submit a file to ACHGateway for upload at the next cutoff processing. The file may be in either Nacha formatted ACH or moov-io/ach's
+        JSON specification. When ValidateOpts are required the JSON specification must be used.
+      tags: [ "Files" ]
+      operationId: submitFile
+      summary: Submit file
+      servers:
+        - url: http://localhost:8484
+          description: Business Logic
+      parameters:
+        - name: shardKey
+          in: path
+          required: true
+          schema:
+            type: string
+            example: "testing"
+        - name: fileID
+          in: path
+          required: true
+          schema:
+            type: string
+            example: AE694B55-C103-4FA5-B62E-E4F6F79AD581
+      requestBody:
+        description: Content of the ACH file in moov-io/ach JSON or Nacha formatted text
+        required: true
+        content:
+          text/plain:
+            schema:
+              description: A plaintext ACH file
+              type: string
+              example: |
+               101 23138010401210428821906240000A094101Federal Reserve Bank   My Bank Name
+               5225Name on Account                     121042882 PPDREG.SALARY      190625   1121042880000001
+               62723138010412345678         0100000000               Receiver Account Name   0121042880000001
+               82250000010023138010000100000000000000000000121042882                          121042880000001
+               9000001000001000000010023138010000100000000000000000000
+               9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999
+               9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999
+               9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999
+               9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999
+               9999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999
+          application/json:
+            schema:
+              $ref: 'https://raw.githubusercontent.com/moov-io/ach/master/openapi.yaml#/components/schemas/CreateFile'
+      responses:
+        '200':
+          description: File accepted. The response includes the predicted next automated cutoff when it can be computed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueueACHFileResponse'
+        '400':
+          description: Unable to read file, make sure the file is in either valid Nacha or moov-io/ach formatting.
+        '500':
+          description: Error publishing the file. Check logs for publishing errors.
+    delete:
+      description: Cancel a pending ACH file
+      tags: [ "Files" ]
+      operationId: cancelFile
+      servers:
+        - url: http://localhost:8484
+          description: Business Logic
+      parameters:
+        - name: shardKey
+          in: path
+          required: true
+          schema:
+            type: string
+            example: "testing"
+        - name: fileID
+          in: path
+          required: true
+          schema:
+            type: string
+            example: AE694B55-C103-4FA5-B62E-E4F6F79AD581
+      responses:
+        '200':
+          description: File accepted successfully without errors.
+        '500':
+          description: Error canceling the file. Check logs for publishing errors.
+
+  /shards/{shardName}/files:
+    get:
+      description: |
+        List files pending for the given shard.
+      tags: [ "Operations" ]
+      operationId: listPendingFiles
+      summary: List pending files
+      servers:
+        - url: http://localhost:9494
+          description: Admin Endpoints
+      parameters:
+        - name: shardName
+          in: path
+          required: true
+          description: Name of shard from configuration file
+          schema:
+            type: string
+            example: SD-live
+      responses:
+        '200':
+          description: List of pending files in the shard.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShardFilesResponse'
+
+  /shards/{shardName}/files/{filepath}:
+    get:
+      description: |
+        Get pending file metadata.
+      tags: [ "Operations" ]
+      operationId: getPendingFile
+      summary: Get pending file
+      servers:
+        - url: http://localhost:9494
+          description: Admin Endpoints
+      parameters:
+        - name: shardName
+          in: path
+          required: true
+          description: Name of shard from configuration file
+          schema:
+            type: string
+            example: SD-live
+        - name: filepath
+          in: path
+          required: true
+          description: Relative filepath within the shard
+          schema:
+            type: string
+            example: "616d04d8-f8ec-46a9-b467-1d6ec009852f.ach"
+      responses:
+        '200':
+          description: Content of pending ACH file
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PendingFile'
+
+  /shards:
+    get:
+      description: |
+        List the configured shards.
+      tags: [ "Shard Mapping" ]
+      operationId: listShards
+      summary: List shards
+      servers:
+        - url: http://localhost:9494
+          description: Admin Endpoints
+      responses:
+        '200':
+          description: List of configured shards
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Shards'
+
+  /shard_mappings:
+    get:
+      description: |
+        List existing shard mappings.
+      tags: [ "Shard Mapping" ]
+      operationId: listShardMappings
+      summary: List shard mappings
+      servers:
+        - url: http://localhost:8484
+          description: Business Logic
+      responses:
+        '200':
+          description: List of shard mappings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShardMappings'
+    post:
+      description: |
+        Create a new shard mapping.
+      tags: [ "Shard Mapping" ]
+      operationId: createShardMapping
+      summary: Create shard mapping
+      servers:
+        - url: http://localhost:8484
+          description: Business Logic
+      requestBody:
+        description: Shard mapping to create
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ShardMapping'
+      responses:
+        '201':
+          description: Shard mapping created
+        '400':
+          description: Error creating shard mapping
+
+  /shard_mappings/{shardKey}:
+    get:
+      description: |
+        Get shard for a specific key.
+      tags: [ "Shard Mapping" ]
+      operationId: getShardMapping
+      summary: Get shard mapping
+      servers:
+        - url: http://localhost:8484
+          description: Business Logic
+      parameters:
+        - name: shardKey
+          in: path
+          required: true
+          description: Key to lookup and retrieve the configured shard mapped to it.
+          schema:
+            type: string
+            example: userID123
+      responses:
+        '200':
+          description: Shard mapped to specified key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShardMapping'
+        '404':
+          description: Shard key not found
+
+# Operations
+  /config:
+    get:
+      description: |
+        Retrieve the active configuration.
+      tags: [ "Operations" ]
+      operationId: getConfig
+      summary: Get ACHGateway config
+      servers:
+        - url: http://localhost:9494
+          description: Admin Endpoints
+      responses:
+        '200':
+          description: Masked application configuration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Config'
+
+  /ping:
+    get:
+      description: PONG if the service is running.
+      tags: [ "Operations" ]
+      operationId: ping
+      summary: Ping ACHGateway
+      servers:
+        - url: http://localhost:8484
+          description: Business Logic
+      responses:
+        '200':
+          description: ACHGateway is running
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: PONG
+
+  /trigger-cutoff:
+    put:
+      description: |
+        Initiate cutoff processing for shards.
+      tags: [ "Operations" ]
+      operationId: triggerCutoff
+      summary: Trigger cutoff processing
+      servers:
+        - url: http://localhost:9494
+          description: Admin Endpoints
+      requestBody:
+        description: |
+          List of shards to trigger cutoff processing for. If no shards are specified then all configured shards will be processed.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TriggerRequest'
+      responses:
+        '200':
+          description: All specified shards have completed cutoff processing successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TriggerResponse'
+
+  /trigger-inbound:
+    put:
+      description: |
+        Initiate inbound processing of ODFI files for shards.
+      tags: [ "Operations" ]
+      operationId: triggerInbound
+      summary: Trigger inbound processing
+      servers:
+        - url: http://localhost:9494
+          description: Admin Endpoints
+      requestBody:
+        description: |
+          List of shards to trigger inbound processing for. This involves consuming all Correction, Inbound, Return, Pre-Note, and Reconciliation files on the upload agent servers, If no shards are specified then all configured shards will be processed.
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TriggerRequest'
+      responses:
+        '200':
+          description: All specified shards have completed inbound processing successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TriggerResponse'
+
+  /shards/{shardName}/pipeline/{isolatedDirectory}/file-uploaded:
+    put:
+      description: |
+        Produce FileUploaded events from an isolatedDirectory.
+      tags: [ "Operations" ]
+      operationId: produceFileUploaded
+      summary: Produce FileUploaded event
+      servers:
+        - url: http://localhost:9494
+          description: Admin Endpoints
+      parameters:
+        - name: shardName
+          in: path
+          required: true
+          description: Name of shard from configuration file
+          schema:
+            type: string
+            example: SD-live
+        - name: isolatedDirectory
+          in: path
+          required: true
+          description: Directory name that was previously isolated/uploaded
+          schema:
+            type: string
+            example: SD-live-1234567890
+        - name: filename
+          in: query
+          description: Filename of uploaded file
+          schema:
+            type: string
+            example: SD_LIVE_20240229_1100.txt
+      responses:
+        '200':
+          description: List of pending files in the shard.
+        '400':
+          description: An internal error occurred.
+        '404':
+          description: The shard or directory was not found.
+
+components:
+  schemas:
+    Config:
+      description: |
+        Full config object loaded with ACHGateway. Certain sensitive values are masked to protect their value.
+        See https://moov-io.github.io/achgateway/config/ for a full specification.
+      properties: {}
+
+    Shards:
+      type: array
+      items:
+        type: string
+      example:
+        - testing
+        - SD-live
+        - ND-live
+
+    ShardFilesResponse:
+      properties:
+        Files:
+          type: array
+          items:
+            $ref: '#/components/schemas/ShardFile'
+        SourceHostname:
+          type: string
+          example: "achgateway-1.apps.svc.cluster.local"
+
+    ShardFile:
+      properties:
+        Filename:
+          type: string
+          example: "dd437bdf-c5ff-4caf-9e0c-9bf2a100b7be.ach"
+        Path:
+          type: string
+          example: "mergable/SD-live/dd437bdf-c5ff-4caf-9e0c-9bf2a100b7be.ach"
+        ModTime:
+          type: string
+          format: date-time
+          example: "2022-01-02T15:04:05Z07:00"
+
+    PendingFile:
+      properties:
+        Filename:
+          type: string
+          example: "dd437bdf-c5ff-4caf-9e0c-9bf2a100b7be.ach"
+        ContentsBase64:
+          type: string
+          example: "bW9vdi1pbyBhY2hnYXRld2F5Cg=="
+        Valid:
+          type: string
+          description: Optional value describing Nacha validation
+        ModTime:
+          type: string
+          format: date-time
+          example: "2022-01-02T15:04:05Z07:00"
+        SourceHostname:
+          type: string
+          example: "achgateway-1.apps.svc.cluster.local"
+
+    ShardMapping:
+      properties:
+        shardKey:
+          type: string
+          example: 8c458c10-5476-4f9c-aeb4-9339fb85d481
+        shardName:
+          type: string
+          example: SD-live
+
+    ShardMappings:
+      type: array
+      items:
+        $ref: '#/components/schemas/ShardMapping'
+
+    TriggerRequest:
+      properties:
+        shardNames:
+          type: array
+          items:
+            type: string
+          example:
+            - "SD-live"
+            - "ND-live"
+      required:
+        - shardNames
+
+    TriggerResponse:
+      properties:
+        Shards:
+          description: A map of shards and any errors encountered during processing.
+          type: object
+          example:
+            "testing": "ERROR processing shard: hostname not found"
+            "SD-live": null
+
+    QueueACHFileResponse:
+      description: |
+        Acknowledgement that a file was queued for a later cutoff. Existing clients can keep reading `id`, `shardKey`, and `error`.
+        `nextCutoff` is the next automated window that should upload the file. It is omitted when the time cannot be predicted.
+        A later manual `/trigger-cutoff` can still upload the file earlier.
+      properties:
+        id:
+          type: string
+          example: AE694B55-C103-4FA5-B62E-E4F6F79AD581
+        shardKey:
+          type: string
+          example: testing
+        error:
+          type: string
+          example: ""
+        nextCutoff:
+          type: string
+          format: date-time
+          example: "2025-01-07T16:15:00-05:00"
+        acceptedAt:
+          type: string
+          format: date-time
+          example: "2025-01-07T13:37:00Z"

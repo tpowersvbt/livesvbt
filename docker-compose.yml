@@ -1,0 +1,89 @@
+# generated-from:1d9b3d94f4b0f679e8204c4f14fd573e2c00d860e17d10925ff98c096101bc5e DO NOT REMOVE, DO UPDATE
+
+version: '3.7'
+
+services:
+  mysql:
+    image: mysql:latest
+    restart: always
+    ports:
+      - "3306:3306"
+    environment:
+      - MYSQL_DATABASE=achgateway
+      - MYSQL_USER=achgateway
+      - MYSQL_PASSWORD=achgateway
+      - MYSQL_ROOT_PASSWORD=root
+    networks:
+      - intranet
+    tmpfs: # Run this mysql in memory as its used for testing
+      - /var/lib/mysql
+
+  ftp:
+    image: moov/fsftp:v0.2.2
+    ports:
+      - "2121:2121"
+      - "30000-30009:30000-30009"
+    volumes:
+      - "./testdata/ftp-server:/data"
+    command:
+      - "-host=0.0.0.0"
+      - "-root=/data"
+      - "-user=admin"
+      - "-pass=123456"
+      - "-passive-ports=30000-30009"
+
+  sftp:
+    image: atmoz/sftp:latest
+    ports:
+      - "2222:22"
+    volumes:
+      - "./testdata/download-test:/home/demo"
+    command:
+      - "demo:password:::inbound,outbound,reconciliation,returned"
+
+  kafka1:
+    image: docker.redpanda.com/redpandadata/redpanda:v26.2.6
+    container_name: kafka1
+    healthcheck: { test: curl -f localhost:9644/v1/status/ready, interval: 1s, start_period: 30s }
+    volumes:
+      - redpanda-0:/var/lib/redpanda/data
+    networks:
+      - intranet
+    ports:
+      - 18081:18081
+      - 18082:18082
+      - 19092:19092
+      - 19644:9644
+    command:
+      - redpanda
+      - start
+      - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr internal://kafka1:9092,external://localhost:19092
+      - --pandaproxy-addr internal://0.0.0.0:8082,external://0.0.0.0:18082
+      - --advertise-pandaproxy-addr internal://kafka1:8082,external://localhost:18082
+      - --schema-registry-addr internal://0.0.0.0:8081,external://0.0.0.0:18081
+      - --rpc-addr kafka1:33145
+      - --advertise-rpc-addr kafka1:33145
+      - --smp 1
+      - --memory 256M
+      - --mode dev-container
+      - --default-log-level=info
+
+  topics:
+    image: docker.redpanda.com/redpandadata/redpanda:v26.2.6
+    depends_on:
+      kafka1:
+        condition: service_healthy
+    networks:
+      - intranet
+    command:
+      - topic
+      - --brokers kafka1:9092
+      - create
+      - ach.outgoing-files
+
+networks:
+  intranet: {}
+
+volumes:
+  redpanda-0: null

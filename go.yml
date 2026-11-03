@@ -1,0 +1,85 @@
+# generated-from:2b032db735b20164e9573e897cc0e43f41777de7e64c1a204fe2943d0d98999e DO NOT REMOVE, DO UPDATE
+# Use https://app.stepsecurity.io/ to improve workflow security
+name: Go
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Go Build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+    - name: Set up Go 1.x
+      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version: stable
+      id: go
+
+    - name: Check out code into the Go module directory
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+
+    - name: Install make (Windows)
+      if: runner.os == 'Windows'
+      run: choco install -y make mingw
+
+    - name: Install
+      run: make install
+
+    - name: Setup
+      if: runner.os == 'Linux'
+      run: make setup
+
+    - name: Check
+      if: runner.os == 'Linux'
+      run: make check
+
+    - name: Go Tests
+      if: runner.os != 'Linux'
+      run: go test ./... -count 1 -short
+
+    - name: Upload Code Coverage
+      if: runner.os == 'Linux'
+      run: bash <(curl -s https://codecov.io/bash)
+
+  docker:
+    name: Docker Build (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    steps:
+    - name: Set up Go 1.x
+      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version: stable
+      id: go
+
+    - name: Check out code into the Go module directory
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+
+    - name: Install
+      run: make install
+
+    - name: Docker Build
+      run: make docker-build-arch ARCH=${{ matrix.arch }}

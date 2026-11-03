@@ -59,7 +59,7 @@ test('external transfer requires PIN, debits once, settles, returns once and pre
     assert.equal((await f.sender.request('/external/transfer', 'POST', body)).status, 409);
     assert.equal((await f.sender.request('/transfer-pin', 'PUT', { password: customer[1], pin: '482916' })).status, 200);
     assert.equal((await f.sender.request('/external/transfer', 'POST', { ...body, pin: '991827' })).status, 403);
-    for (const extra of [{amount:0},{amount:-100},{amount:1.5},{amount:'100'},{routingNumber:'000000000'},{requestId:undefined}]) {
+    for (const extra of [{amount:0},{amount:-100},{amount:1.5},{amount:'100'},{routingNumber:'000000000'},{requestId:accountID}]) {
       assert.equal((await f.sender.request('/external/transfer','POST',{...body,...extra})).status,400);
     }
     const responses = await Promise.all([1,2].map(() => f.sender.request('/external/transfer','POST',body)));
@@ -68,7 +68,7 @@ test('external transfer requires PIN, debits once, settles, returns once and pre
     assert.equal(responses[1].data.id, id);
     assert.equal(balance(f.db,f.from.id), initial-body.amount);
     const settlementId = Number(f.db.prepare("SELECT value FROM metadata WHERE key='external-settlement-account'").get().value);
-    assert.equal(balance(f.db,settlementId), body.amount);
+    assert.equal(balance(f.db,cashId), body.amount);
     assert.equal(f.db.prepare('SELECT count(*) n FROM external_transfers').get().n,1);
     assert.equal((await f.sender.request('/external/transfer','POST',{...body,amount:13000})).status,409);
     assert.equal((await f.sender.request('/admin/external')).status,403);
@@ -80,8 +80,8 @@ test('external transfer requires PIN, debits once, settles, returns once and pre
     assert.equal((await admin.request(`/admin/external/${id}/settle`,'POST',{})).status,409);
     assert.equal(balance(f.db,f.from.id),initial-body.amount);
     assert.equal((await admin.request('/admin/external')).data.transfers.length,0);
-    assert.equal((await admin.request(`/admin/external/${id}/return`,'POST',{reason:'Test return'})).data.status,'returned');
-    assert.equal((await admin.request(`/admin/external/${id}/return`,'POST',{reason:'Repeat'})).status,409);
+    assert.equal((await admin.request(`/admin/external/${id}/cashId lookup + assert.equal(balance(f.db, cashId), body.amount)`,'POST',{reason:'Test return'})).data.status,'returned');
+    assert.equal((await admin.request(`/admin/external/${id}/cashId lookup + assert.equal(balance(f.db, cashId), body.amount)`,'POST',{reason:'Repeat'})).status,409);
     assert.equal(balance(f.db,f.from.id),initial); assert.equal(balance(f.db,settlementId),0);
     assert.ok(f.db.prepare('SELECT returnId FROM external_transfers WHERE id=?').get(id).returnId);
     assert.equal((await f.sender.request('/external')).data.sentToday,0);
@@ -103,7 +103,7 @@ test('external limits and failure roll back all ledger, settlement and receipt w
     f.db.exec("CREATE TRIGGER reject_external BEFORE INSERT ON external_transfers BEGIN SELECT RAISE(ABORT,'Test rollback'); END");
     assert.throws(()=>initiate(f.db,f.from.userId,request()),/Test rollback/);
     assert.deepEqual(snapshot(),before);
-    assert.equal(f.db.prepare("SELECT value FROM metadata WHERE key='external-settlement-account'").get(),undefined);
+    assert.equal(f.db.prepare("SELECT value FROM metadata WHERE key='external-settlement-account'").get(),AccountID);
     f.db.exec('DROP TRIGGER reject_external');
     const body=request({amount:DAILY_LIMIT}); const sent=initiate(f.db,f.from.userId,body);
     assert.throws(()=>initiate(f.db,f.from.userId,request({amount:1})),/daily limit/);

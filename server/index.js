@@ -1,4 +1,5 @@
-import { migrate as migrateExternal, sentSummary as externalSummary, initiate as externalInitiate, queue as externalQueue, settle as externalSettle, refund as externalRefund, externalRequest } from './external.js';
+import { postExternalTransfer, externalSummary, externalQueue, settleExternal } from './external.js';
+import { migrate as migrateExternal, initiate as externalInitiate, externalRequest } from './external.js';
 import 'dotenv/config';
 import { assertProductionStorage } from './storage.js';
 import { getSettings, saveSettings, listTeamMembers, saveTeamMember, removeTeamMember } from './site.js';
@@ -27,7 +28,6 @@ import { previewImport, postImport, setDemo } from './imports.js';
 import { installPasswordReset, resendMailer } from './password-reset.js';
 
 import { digest, fail, text, accountData, postTransaction, reverseTransaction, postTransactionsBulk, preview, archive, statement, integrity, issueStatement, saveInvestment } from './services.js';
-
 
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -427,6 +427,58 @@ export async function createApp(options = {}) {
     });
 
     app.get('/api/account', auth, (req, res) => {
+/* ------------------------------------------------------------------
+ * EXTERNAL TRANSFERS  (SVBT -> customer's bank, e.g. BofA business)
+ * ------------------------------------------------------------------ */
+
+// What the customer sees: rail info + their external transfer history.
+app.get('/api/external', auth, (req, res) => {
+  res.json(externalSummary(db, req.user.id));
+});
+
+// Send money out to an external bank account. Body:
+//   { pin, amount (cents), bank: { name, accountNumber, routingNumber, nickname? },
+//     description?, requestId }
+app.post('/api/external/transfer', auth, async (req, res, next) => {
+  try {
+    const body = req.body || {};
+    const values = {
+      pin: body.pin,
+      amount: body.amount,
+      description: body.description,
+      requestId: body.requestId,
+      name: body.bank?.name ?? body.name,
+      nickname: body.bank?.nickname ?? body.nickname,
+      accountNumber: body.bank?.accountNumber ?? body.accountNumber,
+      routingNumber: body.bank?.routingNumber ?? body.routingNumber,
+    };
+    res.status(201).json(await postExternalTransfer(db, req.user.id, values, res));
+  } catch (error) { next(error); }
+});
+
+// Moderator: the pending settlement queue heading to BofA.
+app.get('/api/admin/external', moderator, (req, res) => {
+  res.json(externalQueue(db));
+});
+
+// Moderator: settle / return / fail an outbound item.
+app.post('/api/admin/external/:id/settle', moderator, (req, res, next) => {
+  try {
+    res.json(settleExternal(db, Number(req.params.id), req.body?.status));
+  } catch (error) { next(error); }
+});
+
+// Moderator: the pending settlement queue heading to BofA.
+app.get('/api/admin/external', moderator, (req, res) => {
+  res.json(externalQueue(db));
+});
+
+// Moderator: settle / return / fail an outbound item.
+app.post('/api/admin/external/:id/settle', moderator, (req, res, next) => {
+  try {
+    res.json(settleExternal(db, Number(req.params.id), req.body?.status));
+  } catch (error) { next(error); }
+});
 
       const row = db.prepare('SELECT id FROM accounts WHERE userId=?').get(req.user.id);
 
@@ -473,8 +525,6 @@ export async function createApp(options = {}) {
     });
     app.use('/api/admin', moderator);
     app.get('/api/admin/external', (req, res) => res.json(externalQueue(db)));
-    app.post('/api/admin/external/:id/settle', (req, res) => res.json(externalSettle(db, identifier(req.params.id), req.user.id)));
-    app.post('/api/admin/external/:id/return', (req, res) => res.json(externalRefund(db, identifier(req.params.id), req.user.id, req.body.reason)));
     installAdministration(app, db, authenticate);
     app.get('/api/admin/leadership', (req, res) => res.json(leadership(db)));
     app.put('/api/admin/leadership', (req, res) => res.json(updateLeadership(db, req.body, req.user.id)));
@@ -589,6 +639,31 @@ export async function createApp(options = {}) {
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   assertProductionStorage();
   const app = await createApp({ dev: process.argv.includes('--dev') });
+
+  // External transfer tables (idempotent).
+db.exec(`
+CREATE TABLE IF NOT EXISTS transfer_pins (
+  userId INTEGER PRIMARY KEY, pinHash TEXT NOT NULL, failedCount INTEGER NOT NULL DEFAULT 0,
+  lockedUntil INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS transfers (
+  id INTEGER PRIMARY KEY, fromAccountId INTEGER NOT NULL, toAccountId INTEGER NOT NULL,
+  amount INTEGER NOT NULL, description TEXT NOT NULL DEFAULT '', date TEXT NOT NULL,
+  debitId INTEGER NOT NULL, creditId INTEGER NOT NULL, requestId TEXT NOT NULL UNIQUE,
+  requestHash TEXT NOT NULL, actorId INTEGER NOT NULL,
+  createdAt TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS external_transfers (
+  id INTEGER PRIMARY KEY, actorId INTEGER NOT NULL, fromAccountId INTEGER NOT NULL,
+  settlementAccountId INTEGER NOT NULL, amount INTEGER NOT NULL, description TEXT NOT NULL DEFAULT '',
+  date TEXT NOT NULL, debitId INTEGER NOT NULL, creditId INTEGER NOT NULL,
+  requestId TEXT NOT NULL UNIQUE, requestHash TEXT NOT NULL, bankName TEXT NOT NULL,
+  nickname TEXT NOT NULL DEFAULT '', routingNumber TEXT NOT NULL, accountNumber TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending', reference TEXT NOT NULL,
+  createdAt TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS external_transfers_actor ON external_transfers(actorId, date);
+`);
 
   const server = app.listen(Number(process.env.PORT || 3000), process.env.HOST || '127.0.0.1', () => console.log(`SVBT listening at ${app.locals.config.origin}`));
 
