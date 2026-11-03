@@ -1,4 +1,4 @@
-import { migrate as migrateExternal, sentSummary as externalSummary, initiate as externalInitiate, queue as externalQueue, settle as externalSettle, refund as externalRefund, externalRequest } from './external.js';
+import { migrate as migrateExternal, sentSummary as externalSummary, initiate as externalInitiate, queue as externalQueue, externalRequest } from './external.js';
 import 'dotenv/config';
 import { assertProductionStorage } from './storage.js';
 import { getSettings, saveSettings, listTeamMembers, saveTeamMember, removeTeamMember } from './site.js';
@@ -473,8 +473,6 @@ export async function createApp(options = {}) {
     });
     app.use('/api/admin', moderator);
     app.get('/api/admin/external', (req, res) => res.json(externalQueue(db)));
-    app.post('/api/admin/external/:id/settle', (req, res) => res.json(externalSettle(db, identifier(req.params.id), req.user.id)));
-    app.post('/api/admin/external/:id/return', (req, res) => res.json(externalRefund(db, identifier(req.params.id), req.user.id, req.body.reason)));
     installAdministration(app, db, authenticate);
     app.get('/api/admin/leadership', (req, res) => res.json(leadership(db)));
     app.put('/api/admin/leadership', (req, res) => res.json(updateLeadership(db, req.body, req.user.id)));
