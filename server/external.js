@@ -1,6 +1,4 @@
-/* SVBT EXTERNAL TRANSFERS */
-
- * Sends funds from a customer's SVBT account OUT to an external bank account
+/* Sends funds from a customer's SVBT account OUT to an external bank account
  * (BofA business checking / any US bank) over the SVBT <-> Bank of America
  * settlement rail.
  *
@@ -12,6 +10,7 @@
  * The settlement account is created automatically on first use and is not linked
  * to a customer user, so it never shows up as a customer's account.
  */
+
 import { atomic, audit, newAccount, verifyPassword } from './db.js';
 import { digest, fail, accountData } from './services.js';
 import { today, ownAccount, checkPin } from './transfers.js';
