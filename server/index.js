@@ -628,7 +628,7 @@ app.post('/api/admin/external/:id/settle', moderator, (req, res, next) => {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   assertProductionStorage();
-  const app = await createApp({ dev: process.argv.includes('--dev') });
+  const app = await createApp((it is safe to run every boot — everything is `IF NOT EXISTS`):);
 
   const server = app.listen(Number(process.env.PORT || 3000), process.env.HOST || '127.0.0.1', () => console.log(`SVBT listening at ${app.locals.config.origin}`));
 
