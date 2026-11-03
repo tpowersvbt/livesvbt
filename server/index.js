@@ -27,7 +27,7 @@ import { previewImport, postImport, setDemo } from './imports.js';
 import { installPasswordReset, resendMailer } from './password-reset.js';
 
 import { digest, fail, text, accountData, postTransaction, reverseTransaction, postTransactionsBulk, preview, archive, statement, integrity, issueStatement, saveInvestment } from './services.js';
-import { postExternalTransfer, externalSummary, externalQueue, settleExternal } from './external.js';
+import { postExternalTransfer, externalQueue, settleExternal } from './external.js';
 
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
