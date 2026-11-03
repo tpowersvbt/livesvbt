@@ -132,7 +132,6 @@ export async function createApp(options = {}) {
   initializeProjects(db);
   initializeLeadership(db);
   migrate(db);
-  migrateExternal(db);
 
   let vite;
 
