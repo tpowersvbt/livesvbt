@@ -134,7 +134,7 @@ test('return restores balances once, settled transfers are not refundable by set
     assert.equal(balance(f.db, f.from.id), initial);
     assert.equal(balance(f.db, first.settlementAccountId), 0);
     assert.equal((await f.staff.request('/admin/external/' + first.id + '/settle', 'POST', { status: 'settled' })).status, 409);
-    assert.equal((await f.sender.request('/external/transfer', 'POST', transfer({ requestId: first.requestId }))).status, 409);
+    assert.equal((await f.sender.request('/external/transfer', 'POST', transfer({ requestId: first.requestId, amount: 200 }))).status, 409);
     const settled = await f.sender.request('/external/transfer', 'POST', transfer());
     assert.equal(settled.status, 201, JSON.stringify(settled.data));
     const second = await f.staff.request('/admin/external/' + settled.data.id + '/settle', 'POST', { status: 'settled' });
