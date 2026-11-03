@@ -427,8 +427,8 @@ export async function createApp(options = {}) {
     });
 
     app.get('/api/account', auth, (req, res) => {
-      ```js
-/* ------------------------------------------------------------------
+      
+ * ------------------------------------------------------------------
  * EXTERNAL TRANSFERS  (SVBT -> customer's bank, e.g. BofA business)
  * ------------------------------------------------------------------ */
 
@@ -468,7 +468,6 @@ app.post('/api/admin/external/:id/settle', moderator, (req, res, next) => {
     res.json(settleExternal(db, Number(req.params.id), req.body?.status));
   } catch (error) { next(error); }
 });
-```
 
       const row = db.prepare('SELECT id FROM accounts WHERE userId=?').get(req.user.id);
 
