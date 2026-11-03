@@ -427,8 +427,7 @@ export async function createApp(options = {}) {
     });
 
     app.get('/api/account', auth, (req, res) => {
-      
- * ------------------------------------------------------------------
+/* ------------------------------------------------------------------
  * EXTERNAL TRANSFERS  (SVBT -> customer's bank, e.g. BofA business)
  * ------------------------------------------------------------------ */
 
@@ -454,6 +453,18 @@ app.post('/api/external/transfer', auth, async (req, res, next) => {
       routingNumber: body.bank?.routingNumber ?? body.routingNumber,
     };
     res.status(201).json(await postExternalTransfer(db, req.user.id, values, res));
+  } catch (error) { next(error); }
+});
+
+// Moderator: the pending settlement queue heading to BofA.
+app.get('/api/admin/external', moderator, (req, res) => {
+  res.json(externalQueue(db));
+});
+
+// Moderator: settle / return / fail an outbound item.
+app.post('/api/admin/external/:id/settle', moderator, (req, res, next) => {
+  try {
+    res.json(settleExternal(db, Number(req.params.id), req.body?.status));
   } catch (error) { next(error); }
 });
 
