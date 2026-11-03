@@ -4,7 +4,7 @@
  *
  * Money flow, all written in ONE atomic DB transaction:
  *   customer account    = DEBIT  (funds leave SVBT)
- *   external settlement = CREDIT (held by SVBT at BofA, routing 026009593)
+ *   external settlement = CREDIT (held by SVBT at BofA, routing 121000358)
  *   external_transfers row links the two ledger entries + rail metadata.
  *
  * The settlement account is created automatically on first use and is not linked
@@ -18,8 +18,8 @@ import { today, ownAccount, checkPin } from './transfers.js';
 // SVBT <-> BofA settlement rail (from the SVBT settlement footer).
 export const SETTLEMENT = {
   partner: 'Bank of America, N.A.',
-  routingElectronic: '026009593',
-  routingPaper: '121000358',
+  routingElectronic: '121000358',
+  routingPaper: '026009593',
   accountNumber: '325223276370',
 };
 
