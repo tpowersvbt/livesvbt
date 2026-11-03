@@ -31,6 +31,7 @@ const DEFAULT_DAILY_LIMIT_CENTS = Number(process.env.EXTERNAL_DAILY_LIMIT || 500
 // ABA weighted checksum, so a typo is caught before money moves.
 export function routeNumber(value) {
   if (typeof value !== 'string' || !/^\d{9}$/.test(value)) fail(400, 'Routing number must be exactly 9 digits.');
+  if (value === '000000000') fail(400, 'That routing number is not a valid US bank routing number.');
   const d = [...value].map(Number);
   const sum = 3 * (d[0] + d[3] + d[6]) + 7 * (d[1] + d[4] + d[7]) + (d[2] + d[5] + d[8]);
   if (sum % 10 !== 0) fail(400, 'That routing number is not a valid US bank routing number.');
