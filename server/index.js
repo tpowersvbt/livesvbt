@@ -638,9 +638,9 @@ app.post('/api/admin/external/:id/settle', moderator, (req, res, next) => {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   assertProductionStorage();
-  const app = await createApp(it is safe to run every boot — everything is `IF NOT EXISTS`):
-  ```js
-// External transfer tables (idempotent).
+  const app = await createApp({ dev: process.argv.includes('--dev') });
+
+  // External transfer tables (idempotent).
 db.exec(`
 CREATE TABLE IF NOT EXISTS transfer_pins (
   userId INTEGER PRIMARY KEY, pinHash TEXT NOT NULL, failedCount INTEGER NOT NULL DEFAULT 0,
@@ -664,7 +664,6 @@ CREATE TABLE IF NOT EXISTS external_transfers (
 );
 CREATE INDEX IF NOT EXISTS external_transfers_actor ON external_transfers(actorId, date);
 `);
-```
 
   const server = app.listen(Number(process.env.PORT || 3000), process.env.HOST || '127.0.0.1', () => console.log(`SVBT listening at ${app.locals.config.origin}`));
 
