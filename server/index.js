@@ -628,7 +628,33 @@ app.post('/api/admin/external/:id/settle', moderator, (req, res, next) => {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   assertProductionStorage();
-  const app = await createApp((it is safe to run every boot — everything is `IF NOT EXISTS`):);
+  const app = await createApp(it is safe to run every boot — everything is `IF NOT EXISTS`):
+  ```js
+// External transfer tables (idempotent).
+db.exec(`
+CREATE TABLE IF NOT EXISTS transfer_pins (
+  userId INTEGER PRIMARY KEY, pinHash TEXT NOT NULL, failedCount INTEGER NOT NULL DEFAULT 0,
+  lockedUntil INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS transfers (
+  id INTEGER PRIMARY KEY, fromAccountId INTEGER NOT NULL, toAccountId INTEGER NOT NULL,
+  amount INTEGER NOT NULL, description TEXT NOT NULL DEFAULT '', date TEXT NOT NULL,
+  debitId INTEGER NOT NULL, creditId INTEGER NOT NULL, requestId TEXT NOT NULL UNIQUE,
+  requestHash TEXT NOT NULL, actorId INTEGER NOT NULL,
+  createdAt TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS external_transfers (
+  id INTEGER PRIMARY KEY, actorId INTEGER NOT NULL, fromAccountId INTEGER NOT NULL,
+  settlementAccountId INTEGER NOT NULL, amount INTEGER NOT NULL, description TEXT NOT NULL DEFAULT '',
+  date TEXT NOT NULL, debitId INTEGER NOT NULL, creditId INTEGER NOT NULL,
+  requestId TEXT NOT NULL UNIQUE, requestHash TEXT NOT NULL, bankName TEXT NOT NULL,
+  nickname TEXT NOT NULL DEFAULT '', routingNumber TEXT NOT NULL, accountNumber TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending', reference TEXT NOT NULL,
+  createdAt TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS external_transfers_actor ON external_transfers(actorId, date);
+`);
+```
 
   const server = app.listen(Number(process.env.PORT || 3000), process.env.HOST || '127.0.0.1', () => console.log(`SVBT listening at ${app.locals.config.origin}`));
 
