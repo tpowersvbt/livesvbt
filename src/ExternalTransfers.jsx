@@ -1,6 +1,3 @@
-/* SVBT EXTERNAL TRANSFERS — customer button + moderator review.
- * Self-contained: only React + the `api` helper the Portal already has. */ 
-
 import { useEffect, useState } from 'react';
 import { Modal } from './App.jsx';
 
