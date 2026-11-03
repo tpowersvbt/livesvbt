@@ -212,3 +212,4 @@ export function transfer(db, id, actorId, reason) {
     return view(db.prepare('SELECT * FROM external_transfers WHERE id=?').get(id));
   });
 }
+export { transfer as refund };
