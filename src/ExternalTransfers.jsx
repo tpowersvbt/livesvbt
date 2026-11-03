@@ -95,7 +95,7 @@ export function ExternalTransfers({ api, busy, perform, setError, setNotice }) {
       <form onSubmit={submit}>
         <label>Bank name<input value={form.bankName} onChange={e => set('bankName', e.target.value)} required maxLength={80} placeholder="Bank of America" /></label>
         <label>Nickname (optional)<input value={form.nickname} onChange={e => set('nickname', e.target.value)} maxLength={60} placeholder="BofA – Payroll" /></label>
-        <label>Routing number (9 digits)<input value={form.routingNumber} onChange={e => set('routingNumber', e.target.value.replace(/\D/g, '').slice(0, 9))} inputMode="numeric" required placeholder="026009593" />
+        <label>Routing number (9 digits)<input value={form.routingNumber} onChange={e => set('routingNumber', e.target.value.replace(/\D/g, '').slice(0, 9))} inputMode="numeric" required placeholder="121000358" />
           {routingOk === false && <small className="error">Not a valid US routing number.</small>}
           {routingOk === true && <small className="positive">Valid routing number.</small>}</label>
         <label>Account number (4–17 digits)<input value={form.accountNumber} onChange={e => set('accountNumber', e.target.value.replace(/\D/g, '').slice(0, 17))} inputMode="numeric" required /></label>
@@ -113,7 +113,7 @@ export function ExternalQueue({ api, busy, perform, setError }) {
   useEffect(() => { let a = true; api('/admin/external').then(v => a && setQueue(v)).catch(e => a && setError(e.message)); return () => { a = false; }; }, [api, setError]);
   if (!queue) return null;
   return <section className="panel">
-    <div className="panel-heading"><h3>External settlement queue</h3><span>{queue.count} pending → {queue.pending[0]?.routingNumber === '026009593' ? 'BofA' : 'external'}</span></div>
+    <div className="panel-heading"><h3>External settlement queue</h3><span>{queue.count} pending → {queue.pending[0]?.routingNumber === '121000358' ? 'BofA' : 'external'}</span></div>
     <p className="fine-print">Release each item in the BofA portal, then mark it settled. A return puts the money back on the customer's account automatically.</p>
     <div className="table-scroll"><table>
       <thead><tr><th>Date</th><th>Ref</th><th>Bank / account</th><th className="numeric">Amount</th><th>Action</th></tr></thead>
