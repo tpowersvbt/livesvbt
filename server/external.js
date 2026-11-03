@@ -58,18 +58,35 @@ export function externalRequest(values) {
   return { amount, requestId, description };
 }
 
-// The internal holding account that represents SVBT's money-at-BofA.
-// Created once, then reused. NOT linked to a customer user.
+// Internal clearing ledger only: this does NOT transmit an ACH payment.
+// Called from postExternalTransfer's existing atomic transaction, so all setup,
+// debit, credit and receipt writes roll back together on any failure.
+// The original account schema requires a non-NULL userId for every account.
+// Create a disabled, unloginable service identity rather than weakening the
+// accounts schema or attaching settlement balances to a real customer.
 export function settlementAccount(db) {
-  const existing = db.prepare("SELECT * FROM accounts WHERE name LIKE 'SVBT External Settlement%' LIMIT 1").get();
-  if (existing) return existing;
-  return atomic(db, () => {
-    const again = db.prepare("SELECT * FROM accounts WHERE name LIKE 'SVBT External Settlement%' LIMIT 1").get();
-    if (again) return again;
-    const id = newAccount(db, null, 'SVBT External Settlement - Bank of America', '3003 Tasman Dr, Santa Clara, CA 95054');
-    audit(db, null, 'external.settlement.created', id, { routing: SETTLEMENT.routingElectronic });
-    return db.prepare('SELECT * FROM accounts WHERE id=?').get(id);
-  });
+  const key = 'external-settlement-account';
+  const recorded = db.prepare('SELECT value FROM metadata WHERE key=?').get(key);
+  if (recorded) {
+    const found = db.prepare('SELECT * FROM accounts WHERE id=?').get(Number(recorded.value));
+    if (!found || found.name !== 'SVBT External Settlement - Internal Clearing') {
+      throw new Error('Settlement ledger configuration mismatch; manual review required.');
+    }
+    return found;
+  }
+  const serviceEmail = 'internal-settlement@svbt.invalid';
+  if (db.prepare('SELECT id FROM users WHERE email=?').get(serviceEmail)) {
+    throw new Error('Unregistered settlement identity already exists; manual review required.');
+  }
+  // Invalid passwordHash format makes authentication impossible. No password is
+  // issued and the reserved .invalid address cannot receive reset messages.
+  const serviceUserId = Number(db.prepare(
+    "INSERT INTO users(email,name,address,role,passwordHash) VALUES (?,?,'Internal clearing only','customer','disabled:service-identity')"
+  ).run(serviceEmail, 'SVBT Internal Settlement Ledger').lastInsertRowid);
+  const id = newAccount(db, serviceUserId, 'SVBT External Settlement - Internal Clearing', 'Internal ledger - not a bank account');
+  db.prepare('INSERT INTO metadata(key,value) VALUES (?,?)').run(key, String(id));
+  audit(db, null, 'external.settlement.created', id, { type: 'internal-clearing-only' });
+  return db.prepare('SELECT * FROM accounts WHERE id=?').get(id);
 }
 
 export function externalSummary(db, userId) {
