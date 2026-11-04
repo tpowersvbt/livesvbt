@@ -9,7 +9,8 @@ export function initializeAdministration(db) {
 }
 
 export function effectiveUser(db, user) {
-  return user ? { ...user, role: db.prepare('SELECT role FROM staff_access WHERE userId=?').get(user.id)?.role || user.role } : null;
+  if (!user || user.email === 'internal-settlement@svbt.invalid' || user.passwordHash === 'disabled:service-identity') return null;
+  return { ...user, role: db.prepare('SELECT role FROM staff_access WHERE userId=?').get(user.id)?.role || user.role };
 }
 
 export function provisionHandoverOwner(db, email) {
