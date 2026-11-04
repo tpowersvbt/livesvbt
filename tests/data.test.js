@@ -45,6 +45,9 @@ test('migrations are versioned, idempotent and guard ledger values at the databa
     assert.equal(db.prepare('PRAGMA user_version').get().user_version, 0);
     assert.equal(migrate(db), schemaVersion);
     assert.equal(migrate(db), schemaVersion);
+    for (const table of ['transfer_batches', 'site_settings', 'external_transfers']) {
+      assert.ok(db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(table), `${table} table is created by migrations`);
+    }
     const insert = date => db.prepare('INSERT INTO transactions(accountId,date,description,amount,actorId) VALUES (?,?,?,?,?)').run(id, date, 'Entry', 100, staff);
     for (const bad of ['2026-02-30', '2026-1-5', '05/01/2026', '1899-12-31']) assert.throws(() => insert(bad), /Invalid ledger date/, bad);
     insert('2026-02-28');
