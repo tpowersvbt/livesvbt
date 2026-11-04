@@ -7,7 +7,7 @@ import { digest, fail } from './services.js';
 
 const lifetimeMs = 30 * 60 * 1000;
 const accepted = 'If that email address has an account, a reset link is on its way. It expires in 30 minutes.';
-const isServiceIdentity = user => user?.passwordHash === 'disabled:service-identity';
+const isServiceIdentity = user => user?.email === 'internal-settlement@svbt.invalid' || user?.passwordHash === 'disabled:service-identity';
 
 // Sends through Resend's HTTP API when RESEND_API_KEY and MAIL_FROM are set.
 export function resendMailer(env = process.env) {
@@ -34,7 +34,7 @@ export function installPasswordReset(app, db, { origin, limiter, authenticate, a
     const address = email(req.body.email);
     if (!sendMail) fail(503, 'Password reset by email is not set up yet. Contact the site operator.');
     const user = db.prepare('SELECT id,email FROM users WHERE email=?').get(address);
-    if (user && !isServiceIdentity(db.prepare('SELECT passwordHash FROM users WHERE id=?').get(user.id))) {
+    if (user && !isServiceIdentity(db.prepare('SELECT email,passwordHash FROM users WHERE id=?').get(user.id))) {
       const token = issue(db, user.id);
       audit(db, null, 'password-reset.request', user.id);
       // Not awaited, so the response time doesn't reveal whether the address has an account.
@@ -67,7 +67,7 @@ export function installPasswordReset(app, db, { origin, limiter, authenticate, a
   // For when email isn't configured or a customer calls in: the owner gets a one-time link to pass on.
   app.post('/api/admin/users/:id/reset-link', ownerOnly, (req, res) => {
     const id = Number(req.params.id);
-    const target = Number.isSafeInteger(id) ? db.prepare('SELECT id,passwordHash FROM users WHERE id=?').get(id) : null;
+    const target = Number.isSafeInteger(id) ? db.prepare('SELECT id,email,passwordHash FROM users WHERE id=?').get(id) : null;
     if (!target || isServiceIdentity(target)) fail(404, 'User not found.');
     const token = issue(db, id);
     audit(db, req.user.id, 'password-reset.link', id);
