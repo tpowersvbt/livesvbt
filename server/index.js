@@ -366,7 +366,7 @@ export async function createApp(options = {}) {
 
       const verified = await authenticate(() => verifyPassword(secret, user?.passwordHash || dummyHash), res);
 
-      if (!user || !verified) { accountGuard.failed(userEmail, user?.id); fail(401, 'Email or password is incorrect.'); }
+      if (!user || !verified || user.email === 'internal-settlement@svbt.invalid' || user.passwordHash === 'disabled:service-identity') { accountGuard.failed(userEmail, user?.id); fail(401, 'Email or password is incorrect.'); }
 
       accountGuard.clear(userEmail);
 
