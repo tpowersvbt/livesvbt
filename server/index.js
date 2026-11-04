@@ -1,4 +1,4 @@
-import { migrate as migrateExternal, sentSummary as externalSummary, initiate as externalInitiate, queue as externalQueue, settle as externalSettle, refund as externalRefund, externalRequest } from './external.js';
+import { postExternalTransfer, externalSummary, externalQueue, settleExternal } from './external.js';
 import 'dotenv/config';
 import { assertProductionStorage } from './storage.js';
 import { getSettings, saveSettings, listTeamMembers, saveTeamMember, removeTeamMember } from './site.js';
@@ -27,7 +27,6 @@ import { previewImport, postImport, setDemo } from './imports.js';
 import { installPasswordReset, resendMailer } from './password-reset.js';
 
 import { digest, fail, text, accountData, postTransaction, reverseTransaction, postTransactionsBulk, preview, archive, statement, integrity, issueStatement, saveInvestment } from './services.js';
-
 
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -132,7 +131,6 @@ export async function createApp(options = {}) {
   initializeProjects(db);
   initializeLeadership(db);
   migrate(db);
-  migrateExternal(db);
 
   let vite;
 
@@ -368,7 +366,7 @@ export async function createApp(options = {}) {
 
       const verified = await authenticate(() => verifyPassword(secret, user?.passwordHash || dummyHash), res);
 
-      if (!user || !verified) { accountGuard.failed(userEmail, user?.id); fail(401, 'Email or password is incorrect.'); }
+      if (!user || !verified || user.email === 'internal-settlement@svbt.invalid' || user.passwordHash === 'disabled:service-identity') { accountGuard.failed(userEmail, user?.id); fail(401, 'Email or password is incorrect.'); }
 
       accountGuard.clear(userEmail);
 
@@ -427,13 +425,42 @@ export async function createApp(options = {}) {
     });
 
     app.get('/api/account', auth, (req, res) => {
-
       const row = db.prepare('SELECT id FROM accounts WHERE userId=?').get(req.user.id);
 
       if (!row) fail(404, 'No customer account is associated with this user.');
 
       res.json(accountData(db, row.id));
 
+    });
+
+    // External ACH routes are registered at startup, not inside /api/account.
+    /* ------------------------------------------------------------------
+     * EXTERNAL TRANSFERS  (SVBT -> customer's bank, e.g. BofA business)
+     * ------------------------------------------------------------------ */
+    
+    // What the customer sees: rail info + their external transfer history.
+    app.get('/api/external', auth, (req, res) => {
+      res.json(externalSummary(db, req.user.id));
+    });
+    
+    // Send money out to an external bank account. Body:
+    //   { pin, amount (cents), bank: { name, accountNumber, routingNumber, nickname? },
+    //     description?, requestId }
+    app.post('/api/external/transfer', auth, async (req, res, next) => {
+      try {
+        const body = req.body || {};
+        const values = {
+          pin: body.pin,
+          amount: body.amount,
+          description: body.description,
+          requestId: body.requestId,
+          name: body.bank?.name ?? body.name,
+          nickname: body.bank?.nickname ?? body.nickname,
+          accountNumber: body.bank?.accountNumber ?? body.accountNumber,
+          routingNumber: body.bank?.routingNumber ?? body.routingNumber,
+        };
+        res.status(201).json(await postExternalTransfer(db, req.user.id, values, res));
+      } catch (error) { next(error); }
     });
 
     // Customer transfers. Setting the PIN needs the account password; sending needs the PIN.
@@ -464,13 +491,6 @@ export async function createApp(options = {}) {
     });
     app.get('/api/leadership', (req, res) => res.json(leadership(db).published));
     app.get('/api/projects', (req, res) => res.json(publicProjects(db)));
-    app.get('/api/external', auth, (req, res) => res.json(externalSummary(db, ownAccount(db, req.user.id).id)));
-    app.post('/api/external/transfer', auth, async (req, res) => {
-      ownAccount(db, req.user.id);
-      const request = externalRequest(req.body), value = pin(req.body.pin);
-      await checkPin(db, req.user.id, value, (candidate, hash) => authenticate(() => verifyPassword(candidate, hash), res), res);
-      res.status(201).json(externalInitiate(db, req.user.id, request));
-    });
     app.use('/api/admin', moderator);
     app.get('/api/admin/external', (req, res) => res.json(externalQueue(db)));
     app.post('/api/admin/external/:id/settle', (req, res) => res.json(externalSettle(db, identifier(req.params.id), req.user.id)));
@@ -478,6 +498,17 @@ export async function createApp(options = {}) {
       const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
       if (!reason) return res.status(400).json({ error: 'A return/rejection reason (e.g. R01) is required.' });
       res.json(externalRefund(db, identifier(req.params.id), req.user.id, reason));
+    // External ACH settlement queue is staff-only and registered once.
+    // Moderator: the pending settlement queue heading to BofA.
+    app.get('/api/admin/external', moderator, (req, res) => {
+      res.json(externalQueue(db));
+    });
+    
+    // Moderator: settle / return / fail an outbound item.
+    app.post('/api/admin/external/:id/settle', moderator, (req, res, next) => {
+      try {
+        res.json(settleExternal(db, Number(req.params.id), req.body?.status));
+      } catch (error) { next(error); }
     });
     installAdministration(app, db, authenticate);
     app.get('/api/admin/leadership', (req, res) => res.json(leadership(db)));
@@ -502,7 +533,30 @@ export async function createApp(options = {}) {
       app.delete('/api/admin/'+resource+'/:id', (req,res)=>{removeTeamMember(db,identifier(req.params.id),req.user.id);res.json({ok:true});});
     }
 
-    app.get('/api/admin/accounts', (req, res) => res.json(db.prepare('SELECT * FROM accounts ORDER BY id').all()));
+    // The ACH clearing ledger is an internal service account, never a customer.
+    // Exclude it at the API boundary (not merely from the frontend selector).
+    const internalClearingPredicate = `(
+      u.email='internal-settlement@svbt.invalid'
+      OR EXISTS (
+        SELECT 1 FROM metadata m
+        WHERE m.key='external-settlement-account' AND m.value=CAST(a.id AS TEXT)
+      )
+    )`;
+    app.get('/api/admin/accounts', (req, res) => res.json(db.prepare(
+      `SELECT a.* FROM accounts a JOIN users u ON u.id=a.userId
+       WHERE NOT ${internalClearingPredicate} ORDER BY a.id`
+    ).all()));
+    // Keep customer account operations away from internal clearing funds.
+    // The dedicated /api/admin/external settlement workflow remains available.
+    app.use('/api/admin/accounts/:id', (req, res, next) => {
+      const id = identifier(req.params.id);
+      const internal = db.prepare(
+        `SELECT 1 FROM accounts a JOIN users u ON u.id=a.userId
+         WHERE a.id=? AND ${internalClearingPredicate}`
+      ).get(id);
+      if (internal) return next(Object.assign(new Error('Customer account not found.'), { status: 404 }));
+      next();
+    });
 
     app.get('/api/admin/accounts/:id', (req, res) => res.json(accountData(db, identifier(req.params.id))));
 

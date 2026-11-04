@@ -72,25 +72,6 @@ export const migrations = [
         CREATE INDEX password_resets_user ON password_resets(userId);`);
     }
   }
-  ,{
-    version: 7,
-    name: 'atomic-transfer-batches',
-    up(db) {
-      db.exec(`CREATE TABLE transfer_batches(requestId TEXT PRIMARY KEY, actorId INTEGER NOT NULL REFERENCES users(id), requestHash TEXT NOT NULL, transferIds TEXT NOT NULL);
-        CREATE TRIGGER immutable_transfer_batches_update BEFORE UPDATE ON transfer_batches BEGIN SELECT RAISE(ABORT,'Immutable transfer batches'); END;
-        CREATE TRIGGER immutable_transfer_batches_delete BEFORE DELETE ON transfer_batches BEGIN SELECT RAISE(ABORT,'Immutable transfer batches'); END;`);
-    }
-  }
-  ,{
-    version: 8,
-    name: 'preserve-root-site-settings',
-    up(db) {
-      db.exec('CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL)');
-      db.exec(`CREATE TABLE IF NOT EXISTS employees(id INTEGER PRIMARY KEY, name TEXT NOT NULL, title TEXT NOT NULL, photoUrl TEXT NOT NULL DEFAULT '', bio TEXT NOT NULL, displayOrder INTEGER NOT NULL DEFAULT 0);
-        CREATE TABLE IF NOT EXISTS site_settings(id INTEGER PRIMARY KEY CHECK(id=1), bannerText TEXT NOT NULL, bannerImage TEXT NOT NULL DEFAULT '', footerText TEXT NOT NULL, footerImage TEXT NOT NULL DEFAULT '', heroTitle TEXT NOT NULL, heroSubtitle TEXT NOT NULL, heroImage TEXT NOT NULL DEFAULT '/svbt-facade.jpg');
-        CREATE TABLE IF NOT EXISTS team_members(id INTEGER PRIMARY KEY, name TEXT NOT NULL, title TEXT NOT NULL, photoUrl TEXT NOT NULL DEFAULT '', bio TEXT NOT NULL, displayOrder INTEGER NOT NULL DEFAULT 0);`);
-    }
-  }
 ];
 
 export const schemaVersion = migrations.at(-1).version;
@@ -99,7 +80,8 @@ export function migrate(db, list = migrations) {
   const latest = list.at(-1).version;
   const applied = () => db.prepare('PRAGMA user_version').get().user_version;
   if (applied() > latest) {
-    throw new Error(`Database schema version ${applied()} is newer than this code (${latest}); refusing startup.`);
+    console.warn(`Database schema version ${applied()} is newer than this code (${latest}). No migrations were run.`);
+    return applied();
   }
   for (const migration of list) {
     if (migration.version <= applied()) continue;

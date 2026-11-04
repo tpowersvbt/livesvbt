@@ -9,7 +9,8 @@ export function initializeAdministration(db) {
 }
 
 export function effectiveUser(db, user) {
-  return user ? { ...user, role: db.prepare('SELECT role FROM staff_access WHERE userId=?').get(user.id)?.role || user.role } : null;
+  if (!user || user.email === 'internal-settlement@svbt.invalid' || user.passwordHash === 'disabled:service-identity') return null;
+  return { ...user, role: db.prepare('SELECT role FROM staff_access WHERE userId=?').get(user.id)?.role || user.role };
 }
 
 export function provisionHandoverOwner(db, email) {
@@ -53,6 +54,7 @@ export function installAdministration(app, db, authenticate) {
     atomic(db,()=>{
       const target=effectiveUser(db,db.prepare('SELECT * FROM users WHERE id=?').get(id));
       if(!target)fail(404,'User not found.');
+      if(target.email==='internal-settlement@svbt.invalid'||target.passwordHash==='disabled:service-identity')fail(404,'User not found.');
       if(id===req.user.id && role!=='owner')fail(409,'Another owner must change your access.');
       if(target.role==='owner' && role!=='owner' && db.prepare("SELECT count(*) n FROM staff_access WHERE role='owner'").get().n<=1)fail(409,'At least one owner must remain.');
       db.prepare('UPDATE users SET role=? WHERE id=?').run(role==='customer'?'customer':'moderator',id);
