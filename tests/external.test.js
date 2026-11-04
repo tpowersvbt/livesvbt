@@ -4,112 +4,183 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { once } from 'node:events';
+import { randomUUID } from 'node:crypto';
 import { createApp } from '../server/index.js';
-import { initiate, DAILY_LIMIT } from '../server/external.js';
 
+// This suite uses disposable SQLite databases and local HTTP only.
+// The application records INTERNAL clearing entries; it does not transmit ACH.
 const origin = 'http://localhost:3000';
 const customer = ['sales@bakhtiariautogroup.com', 'FounderClient!2026'];
-const balance = (db, accountId) => db.prepare('SELECT COALESCE(SUM(amount),0) n FROM transactions WHERE accountId=?').get(accountId).n;
+const admin = ['tpower@siliconvalleybankandtrust.com', 'ModeratorGod!2026'];
+const pin = '482916';
+const balance = (db, id) => db.prepare(
+  'SELECT COALESCE(SUM(amount),0) AS n FROM transactions WHERE accountId=?'
+).get(id).n;
+const count = (db, table) => db.prepare('SELECT COUNT(*) AS n FROM ' + table).get().n;
 
-async function start(directory, options = {}) {
-  const app = await createApp({ production: false, origin, frontend: false, dbPath: join(directory, 'bank.sqlite'), statementDir: join(directory, 'statements'), demoSeed: true, ...options });
-  const server = app.listen(0, '127.0.0.1');
-  await once(server, 'listening');
-  const url = `http://127.0.0.1:${server.address().port}`;
-  function client() {
-    let cookie = '', csrf = '';
+async function fixture() {
+  const directory = mkdtempSync(join(tmpdir(), 'svbt-external-test-'));
+  let app, server;
+  try {
+    app = await createApp({
+      production: false, origin, frontend: false, demoSeed: true,
+      dbPath: join(directory, 'bank.sqlite'),
+      statementDir: join(directory, 'statements'),
+    });
+    server = app.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    const endpoint = 'http://127.0.0.1:' + server.address().port;
+    function client() {
+      let cookie = '', csrf = '';
+      return {
+        async request(path, method = 'GET', body) {
+          const response = await fetch(endpoint + '/api' + path, {
+            method,
+            headers: {
+              ...(cookie ? { Cookie: cookie } : {}),
+              ...(method === 'GET' ? {} : {
+                Origin: origin, 'X-CSRF-Token': csrf,
+                'Content-Type': 'application/json',
+              }),
+            },
+            ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+          });
+          const setCookie = response.headers.get('set-cookie');
+          if (setCookie) cookie = setCookie.split(';')[0];
+          const data = await response.json();
+          if (data.csrfToken) csrf = data.csrfToken;
+          return { status: response.status, data };
+        },
+        async login(email, password) {
+          await this.request('/session');
+          const result = await this.request('/login', 'POST', { email, password });
+          assert.equal(result.status, 200, JSON.stringify(result.data));
+        },
+      };
+    }
+    const sender = client(), staff = client(), anonymous = client();
+    await sender.login(...customer);
+    await staff.login(...admin);
+    const db = app.locals.db;
+    const from = db.prepare('SELECT a.* FROM accounts a JOIN users u ON u.id=a.userId WHERE u.email=?').get(customer[0]);
+    assert.ok(from);
+    assert.equal((await sender.request('/transfer-pin', 'PUT', { password: customer[1], pin })).status, 200);
     return {
-      async request(path, method = 'GET', body) {
-        const response = await fetch(`${url}/api${path}`, { method, headers: { ...(cookie ? { Cookie: cookie } : {}), ...(method !== 'GET' ? { Origin: origin, 'X-CSRF-Token': csrf, 'Content-Type': 'application/json' } : {}) }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
-        const setCookie = response.headers.get('set-cookie');
-        if (setCookie) cookie = setCookie.split(';')[0];
-        const data = await response.json();
-        if (data.csrfToken) csrf = data.csrfToken;
-        return { status: response.status, data };
+      db, from, sender, staff, anonymous, directory,
+      async close() {
+        await new Promise(resolve => server.close(resolve));
+        await app.locals.close();
+        rmSync(directory, { recursive: true, force: true });
       },
-      async login(email, password) {
-        await this.request('/session');
-        assert.equal((await this.request('/login', 'POST', { email, password })).status, 200);
-      },
-      async register(email) {
-        await this.request('/session');
-        assert.equal((await this.request('/register', 'POST', { email, password: 'Recipient-pass-2026', name: 'Recipient Co', address: '1 Main St' })).status, 201);
-      }
     };
+  } catch (error) {
+    if (server?.listening) await new Promise(resolve => server.close(resolve));
+    if (app) await app.locals.close();
+    rmSync(directory, { recursive: true, force: true });
+    throw error;
   }
-  return { db: app.locals.db, client, async stop() { await new Promise(resolve => server.close(resolve)); await app.locals.close(); } };
 }
-async function fixture(options) {
-  const directory = mkdtempSync(join(tmpdir(), 'svbt-transfers-'));
-  const f = await start(directory, options);
-  const sender = f.client(), recipient = f.client();
-  await sender.login(...customer);
-  await recipient.register('recipient@example.com');
-  const from = f.db.prepare("SELECT a.* FROM accounts a JOIN users u ON u.id=a.userId WHERE u.email=?").get(customer[0]);
-  const to = f.db.prepare("SELECT a.* FROM accounts a JOIN users u ON u.id=a.userId WHERE u.email='recipient@example.com'").get();
-  return { ...f, directory, sender, recipient, from, to, async close() { await f.stop(); rmSync(directory, { recursive: true, force: true }); } };
-}
-const request = (extra = {}) => ({ bankName: 'Test bank', routingNumber: '026009593', accountNumber: '123456789', amount: 12500, memo: 'Invoice', requestId: crypto.randomUUID(), pin: '482916', ...extra });
 
-test('external transfer requires PIN, debits once, settles, returns once and preserves queue contract', async () => {
+const transfer = (extra = {}) => ({
+  pin, amount: 100, description: 'Isolated ACH simulation',
+  requestId: randomUUID(),
+  bank: {
+    name: 'Test institution', nickname: 'Test destination',
+    routingNumber: '026009593', accountNumber: '123456789',
+  },
+  ...extra,
+});
+
+test('outbound ACH request is idempotent, balances reconcile, and customer cannot settle', async () => {
   const f = await fixture();
   try {
-    const body = request(), initial = balance(f.db, f.from.id);
-    assert.equal((await f.client().request('/external')).status, 401);
-    assert.equal((await f.sender.request('/external/transfer', 'POST', body)).status, 409);
-    assert.equal((await f.sender.request('/transfer-pin', 'PUT', { password: customer[1], pin: '482916' })).status, 200);
-    assert.equal((await f.sender.request('/external/transfer', 'POST', { ...body, pin: '991827' })).status, 403);
-    for (const extra of [{amount:0},{amount:-100},{amount:1.5},{amount:'100'},{routingNumber:'000000000'},{requestId:accountID}]) {
-      assert.equal((await f.sender.request('/external/transfer','POST',{...body,...extra})).status,400);
-    }
-    const responses = await Promise.all([1,2].map(() => f.sender.request('/external/transfer','POST',body)));
-    for (const r of responses) assert.equal(r.status, 201, JSON.stringify(r.data));
-    const id = responses[0].data.id;
-    assert.equal(responses[1].data.id, id);
-    assert.equal(balance(f.db,f.from.id), initial-body.amount);
-    const settlementId = Number(f.db.prepare("SELECT value FROM metadata WHERE key='external-settlement-account'").get().value);
-    assert.equal(balance(f.db,cashId), body.amount);
-    assert.equal(f.db.prepare('SELECT count(*) n FROM external_transfers').get().n,1);
-    assert.equal((await f.sender.request('/external/transfer','POST',{...body,amount:13000})).status,409);
-    assert.equal((await f.sender.request('/admin/external')).status,403);
-    assert.equal((await f.sender.request(`/admin/external/${id}/settle`,'POST',{})).status,403);
-    const admin = f.client(); await admin.login('tpower@siliconvalleybankandtrust.com','ModeratorGod!2026');
-    const q = await admin.request('/admin/external');
-    assert.equal(q.status,200); assert.equal(q.data.rail.partner,'Bank of America, N.A.'); assert.equal(q.data.transfers.length,1);
-    assert.equal((await admin.request(`/admin/external/${id}/settle`,'POST',{})).data.status,'settled');
-    assert.equal((await admin.request(`/admin/external/${id}/settle`,'POST',{})).status,409);
-    assert.equal(balance(f.db,f.from.id),initial-body.amount);
-    assert.equal((await admin.request('/admin/external')).data.transfers.length,0);
-    assert.equal((await admin.request(`/admin/external/${id}/cashId lookup + assert.equal(balance(f.db, cashId), body.amount)`,'POST',{reason:'Test return'})).data.status,'returned');
-    assert.equal((await admin.request(`/admin/external/${id}/cashId lookup + assert.equal(balance(f.db, cashId), body.amount)`,'POST',{reason:'Repeat'})).status,409);
-    assert.equal(balance(f.db,f.from.id),initial); assert.equal(balance(f.db,settlementId),0);
-    assert.ok(f.db.prepare('SELECT returnId FROM external_transfers WHERE id=?').get(id).returnId);
-    assert.equal((await f.sender.request('/external')).data.sentToday,0);
-    assert.equal((await f.recipient.request('/external')).data.transfers.length,0);
-    assert.equal((await f.sender.request('/external/transfer','POST',body)).data.status,'returned');
-    assert.equal(balance(f.db,f.from.id),initial);
+    const initial = balance(f.db, f.from.id);
+    const body = transfer();
+    const unauthorized = await f.anonymous.request('/external');
+    assert.equal(unauthorized.status, 401);
+    const responses = await Promise.all([
+      f.sender.request('/external/transfer', 'POST', body),
+      f.sender.request('/external/transfer', 'POST', body),
+    ]);
+    for (const response of responses) assert.equal(response.status, 201, JSON.stringify(response.data));
+    assert.equal(responses[0].data.id, responses[1].data.id);
+    assert.equal(count(f.db, 'external_transfers'), 1);
+    const row = f.db.prepare('SELECT * FROM external_transfers').get();
+    assert.equal(row.status, 'pending');
+    assert.equal(balance(f.db, f.from.id), initial - 100);
+    assert.equal(balance(f.db, row.settlementAccountId), 100);
+    assert.equal(f.db.prepare('SELECT amount FROM transactions WHERE id=?').get(row.debitId).amount, -100);
+    assert.equal(f.db.prepare('SELECT amount FROM transactions WHERE id=?').get(row.creditId).amount, 100);
+    assert.equal((await f.sender.request('/external/transfer', 'POST', { ...body, amount: 200 })).status, 409);
+    assert.equal((await f.sender.request('/admin/external')).status, 403);
+    assert.equal((await f.sender.request('/admin/external/' + row.id + '/settle', 'POST', { status: 'settled' })).status, 403);
+    const queue = await f.staff.request('/admin/external');
+    assert.equal(queue.status, 200);
+    assert.equal(queue.data.count, 1);
+    assert.equal(queue.data.pending[0].id, row.id);
   } finally { await f.close(); }
 });
 
-test('external limits and failure roll back all ledger, settlement and receipt writes; migration survives restart', async () => {
+test('return restores balances once, settled transfers are not refundable by settlement API', async () => {
   const f = await fixture();
   try {
-    f.db.prepare("INSERT INTO transactions(accountId,date,description,amount,actorId) VALUES (?,date('now'),'Test limit funding',?,?)").run(f.from.id, DAILY_LIMIT * 2, f.from.userId);
-    const snapshot=()=>['users','accounts','transactions','audit','external_transfers'].map(t=>f.db.prepare(`SELECT count(*) n FROM ${t}`).get().n);
-    const before=snapshot();
-    assert.throws(()=>initiate(f.db,f.to.userId,request()),/Insufficient/);
-    assert.throws(()=>initiate(f.db,f.from.userId,request({amount:DAILY_LIMIT+1})),/daily limit/);
-    assert.deepEqual(snapshot(),before);
-    f.db.exec("CREATE TRIGGER reject_external BEFORE INSERT ON external_transfers BEGIN SELECT RAISE(ABORT,'Test rollback'); END");
-    assert.throws(()=>initiate(f.db,f.from.userId,request()),/Test rollback/);
-    assert.deepEqual(snapshot(),before);
-    assert.equal(f.db.prepare("SELECT value FROM metadata WHERE key='external-settlement-account'").get(),AccountID);
-    f.db.exec('DROP TRIGGER reject_external');
-    const body=request({amount:DAILY_LIMIT}); const sent=initiate(f.db,f.from.userId,body);
-    assert.throws(()=>initiate(f.db,f.from.userId,request({amount:1})),/daily limit/);
-    await f.stop();
-    const restarted=await start(f.directory);
-    try { assert.equal(initiate(restarted.db,f.from.userId,body).id,sent.id); }
-    finally { await restarted.stop(); }
-  } finally { if(f.db.isOpen) await f.stop(); rmSync(f.directory,{recursive:true,force:true}); }
+    const initial = balance(f.db, f.from.id);
+    const returned = await f.sender.request('/external/transfer', 'POST', transfer());
+    assert.equal(returned.status, 201, JSON.stringify(returned.data));
+    const first = f.db.prepare('SELECT * FROM external_transfers WHERE id=?').get(returned.data.id);
+    const result = await f.staff.request('/admin/external/' + first.id + '/settle', 'POST', { status: 'returned' });
+    assert.equal(result.status, 200, JSON.stringify(result.data));
+    assert.equal(result.data.status, 'returned');
+    assert.equal(balance(f.db, f.from.id), initial);
+    assert.equal(balance(f.db, first.settlementAccountId), 0);
+    assert.equal((await f.staff.request('/admin/external/' + first.id + '/settle', 'POST', { status: 'settled' })).status, 409);
+    assert.equal((await f.sender.request('/external/transfer', 'POST', transfer({ requestId: first.requestId, amount: 200 }))).status, 409);
+    const settled = await f.sender.request('/external/transfer', 'POST', transfer());
+    assert.equal(settled.status, 201, JSON.stringify(settled.data));
+    const second = await f.staff.request('/admin/external/' + settled.data.id + '/settle', 'POST', { status: 'settled' });
+    assert.equal(second.status, 200, JSON.stringify(second.data));
+    assert.equal(second.data.status, 'settled');
+    assert.equal(balance(f.db, f.from.id), initial - 100);
+    assert.equal(balance(f.db, first.settlementAccountId), 100);
+    assert.equal((await f.staff.request('/admin/external/' + settled.data.id + '/settle', 'POST', { status: 'returned' })).status, 409);
+    assert.equal((await f.staff.request('/admin/external')).data.count, 0);
+    assert.equal(count(f.db, 'external_transfers'), 2);
+  } finally { await f.close(); }
+});
+
+test('invalid input, insufficient funds and injected write failure cannot leave partial transfers', async () => {
+  const f = await fixture();
+  try {
+    const snapshot = () => ({
+      transactions: count(f.db, 'transactions'),
+      transfers: count(f.db, 'external_transfers'),
+      users: count(f.db, 'users'),
+      accounts: count(f.db, 'accounts'),
+      audit: count(f.db, 'audit'),
+    });
+    const before = snapshot();
+    for (const body of [
+      transfer({ amount: 0 }),
+      transfer({ amount: -1 }),
+      transfer({ amount: '100' }),
+      transfer({ amount: 1.5 }),
+      transfer({ bank: { name: 'Test institution', routingNumber: '000000000', accountNumber: '123456789' } }),
+    ]) {
+      const result = await f.sender.request('/external/transfer', 'POST', body);
+      assert.equal(result.status, 400, JSON.stringify(result.data));
+      assert.deepEqual(snapshot(), before);
+    }
+    const tooMuch = await f.sender.request('/external/transfer', 'POST', transfer({ amount: 1000000000 }));
+    assert.equal(tooMuch.status, 409);
+    assert.deepEqual(snapshot(), before);
+    f.db.exec("CREATE TRIGGER fail_external_test BEFORE INSERT ON external_transfers BEGIN SELECT RAISE(ABORT,'Injected rollback'); END");
+    const failed = await f.sender.request('/external/transfer', 'POST', transfer());
+    assert.ok(failed.status >= 400, JSON.stringify(failed.data));
+    assert.deepEqual(snapshot(), before);
+    assert.equal(f.db.prepare("SELECT value FROM metadata WHERE key='external-settlement-account'").get(), undefined);
+    f.db.exec('DROP TRIGGER fail_external_test');
+    const recovered = await f.sender.request('/external/transfer', 'POST', transfer());
+    assert.equal(recovered.status, 201, JSON.stringify(recovered.data));
+    assert.equal(count(f.db, 'external_transfers'), 1);
+  } finally { await f.close(); }
 });

@@ -90,6 +90,39 @@ export const migrations = [
         CREATE TABLE IF NOT EXISTS site_settings(id INTEGER PRIMARY KEY CHECK(id=1), bannerText TEXT NOT NULL, bannerImage TEXT NOT NULL DEFAULT '', footerText TEXT NOT NULL, footerImage TEXT NOT NULL DEFAULT '', heroTitle TEXT NOT NULL, heroSubtitle TEXT NOT NULL, heroImage TEXT NOT NULL DEFAULT '/svbt-facade.jpg');
         CREATE TABLE IF NOT EXISTS team_members(id INTEGER PRIMARY KEY, name TEXT NOT NULL, title TEXT NOT NULL, photoUrl TEXT NOT NULL DEFAULT '', bio TEXT NOT NULL, displayOrder INTEGER NOT NULL DEFAULT 0);`);
     }
+  },
+  {
+    version: 9,
+    name: 'external-transfer-ledger',
+    up(db) {
+      // Only creates an internal ACH REQUEST ledger. No ACH file is sent to a bank.
+      // Do not replace an existing table or discard any pre-existing transfers.
+      db.exec(`CREATE TABLE IF NOT EXISTS external_transfers (
+        id INTEGER PRIMARY KEY,
+        actorId INTEGER NOT NULL REFERENCES users(id),
+        fromAccountId INTEGER NOT NULL REFERENCES accounts(id),
+        settlementAccountId INTEGER NOT NULL REFERENCES accounts(id),
+        amount INTEGER NOT NULL CHECK(typeof(amount)='integer' AND amount>0),
+        description TEXT NOT NULL DEFAULT '',
+        date TEXT NOT NULL,
+        debitId INTEGER NOT NULL UNIQUE REFERENCES transactions(id),
+        creditId INTEGER NOT NULL UNIQUE REFERENCES transactions(id),
+        requestId TEXT NOT NULL UNIQUE,
+        requestHash TEXT NOT NULL,
+        bankName TEXT NOT NULL,
+        nickname TEXT NOT NULL DEFAULT '',
+        routingNumber TEXT NOT NULL,
+        accountNumber TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','settled','returned','failed')),
+        reference TEXT NOT NULL,
+        createdAt TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+      );
+      CREATE INDEX IF NOT EXISTS external_transfers_actor ON external_transfers(actorId, date);`);
+      const columns = new Set(db.prepare('PRAGMA table_info(external_transfers)').all().map(row => row.name));
+      for (const name of ['actorId','fromAccountId','settlementAccountId','debitId','creditId','requestId','requestHash','bankName','nickname','routingNumber','accountNumber','status','reference']) {
+        if (!columns.has(name)) throw new Error(`Existing external transfer table lacks ${name}; manual review required before migration`);
+      }
+    }
   }
 ];
 
