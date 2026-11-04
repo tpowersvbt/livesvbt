@@ -527,7 +527,30 @@ export async function createApp(options = {}) {
       app.delete('/api/admin/'+resource+'/:id', (req,res)=>{removeTeamMember(db,identifier(req.params.id),req.user.id);res.json({ok:true});});
     }
 
-    app.get('/api/admin/accounts', (req, res) => res.json(db.prepare('SELECT * FROM accounts ORDER BY id').all()));
+    // The ACH clearing ledger is an internal service account, never a customer.
+    // Exclude it at the API boundary (not merely from the frontend selector).
+    const internalClearingPredicate = `(
+      u.email='internal-settlement@svbt.invalid'
+      OR EXISTS (
+        SELECT 1 FROM metadata m
+        WHERE m.key='external-settlement-account' AND m.value=CAST(a.id AS TEXT)
+      )
+    )`;
+    app.get('/api/admin/accounts', (req, res) => res.json(db.prepare(
+      `SELECT a.* FROM accounts a JOIN users u ON u.id=a.userId
+       WHERE NOT ${internalClearingPredicate} ORDER BY a.id`
+    ).all()));
+    // Keep customer account operations away from internal clearing funds.
+    // The dedicated /api/admin/external settlement workflow remains available.
+    app.use('/api/admin/accounts/:id', (req, res, next) => {
+      const id = identifier(req.params.id);
+      const internal = db.prepare(
+        `SELECT 1 FROM accounts a JOIN users u ON u.id=a.userId
+         WHERE a.id=? AND ${internalClearingPredicate}`
+      ).get(id);
+      if (internal) return next(Object.assign(new Error('Customer account not found.'), { status: 404 }));
+      next();
+    });
 
     app.get('/api/admin/accounts/:id', (req, res) => res.json(accountData(db, identifier(req.params.id))));
 
