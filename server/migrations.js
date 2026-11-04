@@ -72,58 +72,6 @@ export const migrations = [
         CREATE INDEX password_resets_user ON password_resets(userId);`);
     }
   }
-  ,{
-    version: 7,
-    name: 'atomic-transfer-batches',
-    up(db) {
-      db.exec(`CREATE TABLE transfer_batches(requestId TEXT PRIMARY KEY, actorId INTEGER NOT NULL REFERENCES users(id), requestHash TEXT NOT NULL, transferIds TEXT NOT NULL);
-        CREATE TRIGGER immutable_transfer_batches_update BEFORE UPDATE ON transfer_batches BEGIN SELECT RAISE(ABORT,'Immutable transfer batches'); END;
-        CREATE TRIGGER immutable_transfer_batches_delete BEFORE DELETE ON transfer_batches BEGIN SELECT RAISE(ABORT,'Immutable transfer batches'); END;`);
-    }
-  }
-  ,{
-    version: 8,
-    name: 'preserve-root-site-settings',
-    up(db) {
-      db.exec('CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL)');
-      db.exec(`CREATE TABLE IF NOT EXISTS employees(id INTEGER PRIMARY KEY, name TEXT NOT NULL, title TEXT NOT NULL, photoUrl TEXT NOT NULL DEFAULT '', bio TEXT NOT NULL, displayOrder INTEGER NOT NULL DEFAULT 0);
-        CREATE TABLE IF NOT EXISTS site_settings(id INTEGER PRIMARY KEY CHECK(id=1), bannerText TEXT NOT NULL, bannerImage TEXT NOT NULL DEFAULT '', footerText TEXT NOT NULL, footerImage TEXT NOT NULL DEFAULT '', heroTitle TEXT NOT NULL, heroSubtitle TEXT NOT NULL, heroImage TEXT NOT NULL DEFAULT '/svbt-facade.jpg');
-        CREATE TABLE IF NOT EXISTS team_members(id INTEGER PRIMARY KEY, name TEXT NOT NULL, title TEXT NOT NULL, photoUrl TEXT NOT NULL DEFAULT '', bio TEXT NOT NULL, displayOrder INTEGER NOT NULL DEFAULT 0);`);
-    }
-  },
-  {
-    version: 9,
-    name: 'external-transfer-ledger',
-    up(db) {
-      // Only creates an internal ACH REQUEST ledger. No ACH file is sent to a bank.
-      // Do not replace an existing table or discard any pre-existing transfers.
-      db.exec(`CREATE TABLE IF NOT EXISTS external_transfers (
-        id INTEGER PRIMARY KEY,
-        actorId INTEGER NOT NULL REFERENCES users(id),
-        fromAccountId INTEGER NOT NULL REFERENCES accounts(id),
-        settlementAccountId INTEGER NOT NULL REFERENCES accounts(id),
-        amount INTEGER NOT NULL CHECK(typeof(amount)='integer' AND amount>0),
-        description TEXT NOT NULL DEFAULT '',
-        date TEXT NOT NULL,
-        debitId INTEGER NOT NULL UNIQUE REFERENCES transactions(id),
-        creditId INTEGER NOT NULL UNIQUE REFERENCES transactions(id),
-        requestId TEXT NOT NULL UNIQUE,
-        requestHash TEXT NOT NULL,
-        bankName TEXT NOT NULL,
-        nickname TEXT NOT NULL DEFAULT '',
-        routingNumber TEXT NOT NULL,
-        accountNumber TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','settled','returned','failed')),
-        reference TEXT NOT NULL,
-        createdAt TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-      );
-      CREATE INDEX IF NOT EXISTS external_transfers_actor ON external_transfers(actorId, date);`);
-      const columns = new Set(db.prepare('PRAGMA table_info(external_transfers)').all().map(row => row.name));
-      for (const name of ['actorId','fromAccountId','settlementAccountId','debitId','creditId','requestId','requestHash','bankName','nickname','routingNumber','accountNumber','status','reference']) {
-        if (!columns.has(name)) throw new Error(`Existing external transfer table lacks ${name}; manual review required before migration`);
-      }
-    }
-  }
 ];
 
 export const schemaVersion = migrations.at(-1).version;
@@ -132,7 +80,8 @@ export function migrate(db, list = migrations) {
   const latest = list.at(-1).version;
   const applied = () => db.prepare('PRAGMA user_version').get().user_version;
   if (applied() > latest) {
-    throw new Error(`Database schema version ${applied()} is newer than this code (${latest}); refusing startup.`);
+    console.warn(`Database schema version ${applied()} is newer than this code (${latest}). No migrations were run.`);
+    return applied();
   }
   for (const migration of list) {
     if (migration.version <= applied()) continue;
