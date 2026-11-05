@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { createApp } from '../server/index.js';
 
 // This suite uses disposable SQLite databases and local HTTP only.
-// The application records INTERNAL clearing entries; it does not transmit ACH.
+// The application records INTERNAL EXTERNAL clearing entries; it does transmit ACH.
 const origin = 'http://localhost:3000';
 const customer = ['sales@bakhtiariautogroup.com', 'FounderClient!2026'];
 const admin = ['tpower@siliconvalleybankandtrust.com', 'ModeratorGod!2026'];
@@ -82,11 +82,11 @@ async function fixture() {
 }
 
 const transfer = (extra = {}) => ({
-  pin, amount: 100, description: 'Isolated ACH simulation',
+  pin, amount: 100, description: 'Isolated ACH TRANSFER',
   requestId: randomUUID(),
   bank: {
-    name: 'Test institution', nickname: 'Test destination',
-    routingNumber: '026009593', accountNumber: '123456789',
+    name: 'Bank of America', nickname: 'BOFA',
+    routingNumber: '123456789', accountNumber: '325223276370',
   },
   ...extra,
 });
