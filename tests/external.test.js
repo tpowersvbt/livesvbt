@@ -94,6 +94,48 @@ const transfer = (extra = {}) => ({
 test('outbound ACH request is idempotent, balances reconcile, and customer cannot settle', async () => {
   const f = await fixture();
   try {
+    const body = request(), initial = balance(f.db, f.from.id);
+    assert.equal((await f.client().request('/external')).status, 401);
+    assert.equal((await f.sender.request('/external/transfer', 'POST', body)).status, 409);
+    assert.equal((await f.sender.request('/transfer-pin', 'PUT', { password: customer[1], pin: '482916' })).status, 200);
+    assert.equal((await f.sender.request('/external/transfer', 'POST', { ...body, pin: '991827' })).status, 403);
+    for (const extra of [{amount:0},{amount:-100},{amount:1.5},{amount:'100'},{routingNumber:'000000000'},{requestId:accountID}]) {
+      assert.equal((await f.sender.request('/external/transfer','POST',{...body,...extra})).status,400);
+    }
+    const responses = await Promise.all([1,2].map(() => f.sender.request('/external/transfer','POST',body)));
+    for (const r of responses) assert.equal(r.status, 201, JSON.stringify(r.data));
+    const id = responses[0].data.id;
+    assert.equal(responses[1].data.id, id);
+    assert.equal(balance(f.db,f.from.id), initial-body.amount);
+    const settlementId = Number(f.db.prepare("SELECT value FROM metadata WHERE key='external-settlement-account'").get().value);
+    assert.equal(balance(f.db,cashId), body.amount);
+    assert.equal(f.db.prepare('SELECT count(*) n FROM external_transfers').get().n,1);
+    assert.equal((await f.sender.request('/external/transfer','POST',{...body,amount:13000})).status,409);
+    assert.equal((await f.sender.request('/admin/external')).status,403);
+    assert.equal((await f.sender.request(`/admin/external/${id}/settle`,'POST',{})).status,403);
+    const admin = f.client(); await admin.login('tpower@siliconvalleybankandtrust.com','ModeratorGod!2026');
+    const q = await admin.request('/admin/external');
+    assert.equal(q.status,200); assert.equal(q.data.rail.partner,'Bank of America, N.A.'); assert.equal(q.data.transfers.length,1);
+    assert.equal((await admin.request(`/admin/external/${id}/settle`,'POST',{})).data.status,'settled');
+    assert.equal((await admin.request(`/admin/external/${id}/settle`,'POST',{})).status,409);
+    assert.equal(balance(f.db,f.from.id),initial-body.amount);
+    assert.equal((await admin.request('/admin/external')).data.transfers.length,0);
+    // Return path = a real ACH rejection only: a settled item cannot be returned.
+    assert.equal((await admin.request(`/admin/external/${id}/return`,'POST',{reason:'R01'})).status,409);
+    const pending = await f.sender.request('/external/transfer','POST',request({amount:5000}));
+    assert.equal(pending.status,201,JSON.stringify(pending.data));
+    const rid = pending.data.id, beforeReturn = balance(f.db,f.from.id);
+    assert.equal((await admin.request(`/admin/external/${rid}/return`,'POST',{})).status,400);
+    assert.equal((await admin.request(`/admin/external/${rid}/return`,'POST',{reason:'   '})).status,400);
+    const returned = await admin.request(`/admin/external/${rid}/return`,'POST',{reason:'R01'});
+    assert.equal(returned.status,200,JSON.stringify(returned.data)); assert.equal(returned.data.status,'returned'); assert.equal(returned.data.reason,'R01');
+    assert.equal((await admin.request(`/admin/external/${rid}/return`,'POST',{reason:'R01'})).status,409);
+    assert.equal(balance(f.db,f.from.id),beforeReturn+5000);
+    assert.ok(f.db.prepare('SELECT returnId FROM external_transfers WHERE id=?').get(rid).returnId);
+    const entry = f.db.prepare('SELECT description FROM transactions WHERE accountId=? ORDER BY id DESC LIMIT 1').get(f.from.id).description;
+    assert.match(entry,/returned\/rejected: R01/); assert.doesNotMatch(entry,/funds transferred/);
+    assert.equal((await f.sender.request('/external')).data.sentToday,body.amount);
+    assert.equal((await f.recipient.request('/external')).data.transfers.length,0);
     const initial = balance(f.db, f.from.id);
     const body = transfer();
     const unauthorized = await f.anonymous.request('/external');

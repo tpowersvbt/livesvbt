@@ -492,6 +492,12 @@ export async function createApp(options = {}) {
     app.get('/api/leadership', (req, res) => res.json(leadership(db).published));
     app.get('/api/projects', (req, res) => res.json(publicProjects(db)));
     app.use('/api/admin', moderator);
+    app.get('/api/admin/external', (req, res) => res.json(externalQueue(db)));
+    app.post('/api/admin/external/:id/settle', (req, res) => res.json(externalSettle(db, identifier(req.params.id), req.user.id)));
+    app.post('/api/admin/external/:id/return', (req, res) => {
+      const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
+      if (!reason) return res.status(400).json({ error: 'A return/rejection reason (e.g. R01) is required.' });
+      res.json(externalRefund(db, identifier(req.params.id), req.user.id, reason));
     // External ACH settlement queue is staff-only and registered once.
     // Moderator: the pending settlement queue heading to BofA.
     app.get('/api/admin/external', moderator, (req, res) => {
