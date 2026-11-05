@@ -6,6 +6,12 @@ import { dirname } from 'node:path';
 
 const derive = promisify(scrypt);
 export const demoCredentials = { customer: [process.env.DEMO_CUSTOMER_EMAIL || 'sales@bakhtiariautogroup.com', process.env.DEMO_CUSTOMER_PASSWORD || 'FounderClient!2026'], moderator: [process.env.DEMO_MODERATOR_EMAIL || 'tpower@siliconvalleybankandtrust.com', process.env.DEMO_MODERATOR_PASSWORD || 'ModeratorGod!2026'] };
+// Published repository passwords are always refused for real accounts. Custom
+// demo passwords are additionally blocked when demonstration mode is enabled.
+// A private legacy DEMO_* alias is not evidence of publication in an unseeded
+// production installation, where no demonstration accounts are provisioned.
+const demonstrationMode = process.env.NODE_ENV !== 'production' || process.env.DEMO_SEED === 'true' || process.env.SAMPLE_DATA === 'true';
+export const publicPasswords = new Set(['FounderClient!2026', 'ModeratorGod!2026', 'svbt2026!', 'YourSecurePassword123!@#', 'YourSecurePassword!2026', ...(demonstrationMode ? Object.values(demoCredentials).map(([, value]) => value) : [])]);
 export async function hashPassword(password) {
   const salt = randomBytes(32).toString('hex');
   const hash = await derive(password, salt, 64, { N: 131072, r: 8, p: 1, maxmem: 256 * 1024 * 1024 });
@@ -36,14 +42,12 @@ export function openDatabase(path) {
     CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY, email TEXT NOT NULL UNIQUE COLLATE NOCASE, name TEXT NOT NULL, address TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('customer','moderator')), passwordHash TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS accounts(id INTEGER PRIMARY KEY, userId INTEGER NOT NULL UNIQUE REFERENCES users(id), number TEXT NOT NULL UNIQUE CHECK(length(number)=12 AND number NOT GLOB '*[^0-9]*'), name TEXT NOT NULL, address TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS transactions(id INTEGER PRIMARY KEY, accountId INTEGER NOT NULL REFERENCES accounts(id), date TEXT NOT NULL, description TEXT NOT NULL, amount INTEGER NOT NULL CHECK(typeof(amount)='integer' AND amount != 0 AND abs(amount)<=100000000000), reversalOf INTEGER UNIQUE REFERENCES transactions(id), actorId INTEGER REFERENCES users(id), createdAt TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')));
+    CREATE TABLE IF NOT EXISTS transaction_details(transactionId INTEGER PRIMARY KEY REFERENCES transactions(id), referenceId TEXT NOT NULL DEFAULT '', occurredAt TEXT NOT NULL DEFAULT '', notes TEXT NOT NULL DEFAULT '', version INTEGER NOT NULL DEFAULT 1);
+    CREATE TABLE IF NOT EXISTS statement_notes(accountId INTEGER NOT NULL REFERENCES accounts(id), month TEXT NOT NULL, notes TEXT NOT NULL DEFAULT '', version INTEGER NOT NULL DEFAULT 1, PRIMARY KEY(accountId,month));
     CREATE TABLE IF NOT EXISTS sessions(tokenHash TEXT PRIMARY KEY, userId INTEGER REFERENCES users(id), csrfToken TEXT NOT NULL, expiresAt INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS statements(id INTEGER PRIMARY KEY, accountId INTEGER NOT NULL REFERENCES accounts(id), month TEXT NOT NULL, revision INTEGER NOT NULL, issuedAt TEXT NOT NULL, closing INTEGER NOT NULL, snapshot TEXT NOT NULL, hash TEXT NOT NULL, pdf BLOB NOT NULL, pdfHash TEXT NOT NULL, archivePath TEXT NOT NULL, UNIQUE(accountId,month,revision));
     CREATE TABLE IF NOT EXISTS investments(id INTEGER PRIMARY KEY, sector TEXT NOT NULL, status TEXT NOT NULL, targetCapital INTEGER NOT NULL CHECK(typeof(targetCapital)='integer' AND targetCapital>=0 AND targetCapital<=100000000000), risk TEXT NOT NULL, strategy TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS audit(id INTEGER PRIMARY KEY, actorId INTEGER REFERENCES users(id), action TEXT NOT NULL, entity TEXT NOT NULL, details TEXT NOT NULL, createdAt TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')));
-    CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);
-    CREATE TABLE IF NOT EXISTS employees(id INTEGER PRIMARY KEY, name TEXT NOT NULL, title TEXT NOT NULL, photoUrl TEXT NOT NULL DEFAULT '', bio TEXT NOT NULL, displayOrder INTEGER NOT NULL DEFAULT 0);
-    CREATE TABLE IF NOT EXISTS site_settings(id INTEGER PRIMARY KEY CHECK(id=1), bannerText TEXT NOT NULL, bannerImage TEXT NOT NULL DEFAULT '', footerText TEXT NOT NULL, footerImage TEXT NOT NULL DEFAULT '', heroTitle TEXT NOT NULL, heroSubtitle TEXT NOT NULL, heroImage TEXT NOT NULL DEFAULT '/svbt-facade.jpg');
-    CREATE TABLE IF NOT EXISTS team_members(id INTEGER PRIMARY KEY, name TEXT NOT NULL, title TEXT NOT NULL, photoUrl TEXT NOT NULL DEFAULT '', bio TEXT NOT NULL, displayOrder INTEGER NOT NULL DEFAULT 0);
     CREATE TABLE IF NOT EXISTS metadata(key TEXT PRIMARY KEY, value TEXT NOT NULL);
     CREATE TRIGGER IF NOT EXISTS valid_reversal BEFORE INSERT ON transactions WHEN NEW.reversalOf IS NOT NULL BEGIN
       SELECT CASE WHEN NOT EXISTS(SELECT 1 FROM transactions WHERE id=NEW.reversalOf AND accountId=NEW.accountId AND amount=-NEW.amount AND reversalOf IS NULL AND date<=NEW.date) THEN RAISE(ABORT,'Invalid reversal') END;
@@ -54,15 +58,25 @@ export function openDatabase(path) {
   }
   return db;
 }
-export async function seedDemo(db) {
+export async function seedDemo(db, { moderatorId, customerPassword } = {}) {
   if (db.prepare("SELECT value FROM metadata WHERE key='demo-seeded'").get()) return;
-  const customerHash = await hashPassword(demoCredentials.customer[1]);
-  const moderatorHash = await hashPassword(demoCredentials.moderator[1]);
+  const customerHash = await hashPassword(customerPassword || demoCredentials.customer[1]);
+  const moderatorHash = moderatorId ? null : await hashPassword(demoCredentials.moderator[1]);
   atomic(db, () => {
     if (db.prepare("SELECT value FROM metadata WHERE key='demo-seeded'").get()) return;
-    const existingCustomer = db.prepare('SELECT id FROM users WHERE email=?').get(demoCredentials.customer[0]); const customer = existingCustomer ? existingCustomer.id : Number(db.prepare('INSERT INTO users(email,name,address,role,passwordHash) VALUES (?,?,?,?,?)').run(demoCredentials.customer[0], 'Bakhtiari Auto Group, LLC', '3155 Stevens Creek, San Jose, CA 95117', 'customer', customerHash).lastInsertRowid);
-    const existingModerator = db.prepare('SELECT id FROM users WHERE email=?').get(demoCredentials.moderator[0]); const moderator = existingModerator ? existingModerator.id : Number(db.prepare('INSERT INTO users(email,name,address,role,passwordHash) VALUES (?,?,?,?,?)').run(demoCredentials.moderator[0], 'Timothy Powers', 'Silicon Valley, California', 'moderator', moderatorHash).lastInsertRowid);
-    const existingAccount = db.prepare('SELECT id FROM accounts WHERE userId=?').get(customer); const accountId = existingAccount ? existingAccount.id : newAccount(db, customer, 'Bakhtiari Auto Group, LLC', '3155 Stevens Creek, San Jose, CA 95117');
+    function accountUser(email, name, address, role, hash) {
+      const existing = db.prepare('SELECT id,role FROM users WHERE email=?').get(email);
+      if (existing) {
+        if (existing.role !== role) throw new Error('Sample account email belongs to a different role.');
+        return existing.id;
+      }
+      return Number(db.prepare('INSERT INTO users(email,name,address,role,passwordHash) VALUES (?,?,?,?,?)').run(email, name, address, role, hash).lastInsertRowid);
+    }
+    const customer = accountUser(demoCredentials.customer[0], 'Bakhtiari Auto Group, LLC', '3155 Stevens Creek, San Jose, CA 95117', 'customer', customerHash);
+    const moderator = moderatorId || accountUser(demoCredentials.moderator[0], 'Timothy Powers', 'Silicon Valley, California', 'moderator', moderatorHash);
+    const existingAccount = db.prepare('SELECT id FROM accounts WHERE userId=?').get(customer);
+    const accountId = existingAccount?.id || newAccount(db, customer, 'Bakhtiari Auto Group, LLC', '3155 Stevens Creek, San Jose, CA 95117');
+    if (db.prepare('SELECT id FROM transactions WHERE accountId=?').get(accountId)) throw new Error('Existing ledger has activity; sample data was not added.');
     const descriptions = ['Cloud infrastructure', 'Software subscriptions', 'Office rent', 'Internet and communications', 'Business insurance', 'Accounting services', 'Digital marketing', 'Contract engineering', 'Office supplies', 'Security monitoring', 'Technology hardware', 'Business travel'];
     const base = [65000, 32000, 180000, 18000, 28000, 45000, 50000, 60000, 12000, 22000, 35000, 29700];
     const insert = db.prepare('INSERT INTO transactions(accountId,date,description,amount,actorId) VALUES (?,?,?,?,?)');

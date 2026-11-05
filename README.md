@@ -1,155 +1,149 @@
-# Silicon Valley Bank and Trust
+<!--generated-from:11badeae7f5171e6ec312a610718a7a4ac276e18df06d4d715e771702f50aba8 DO NOT REMOVE, DO UPDATE -->
+[![Moov Banner Logo](https://user-images.githubusercontent.com/20115216/104214617-885b3c80-53ec-11eb-8ce0-9fc745fb5bfc.png)](https://github.com/moov-io)
 
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy)
+<p align="center">
+  <a href="https://moov-io.github.io/achgateway/">Project Documentation</a>
+  ·
+  <a href="https://moov.io/blog/education/ach-gateway-guide/">Quickstart Guide</a>
+  ·
+  <a href="https://slack.moov.io/">Community</a>
+  ·
+  <a href="https://moov.io/blog/">Blog</a>
+  <br>
+  <br>
+</p>
 
-**🚀 ONE-CLICK DEPLOY**: After uploading to GitHub, click the button above or see [ONE_CLICK_DEPLOY.md](ONE_CLICK_DEPLOY.md)
+[![GoDoc](https://godoc.org/github.com/moov-io/achgateway?status.svg)](https://godoc.org/github.com/moov-io/achgateway)
+[![Build Status](https://github.com/moov-io/achgateway/workflows/Go/badge.svg)](https://github.com/moov-io/achgateway/actions)
+[![Coverage Status](https://codecov.io/gh/moov-io/achgateway/branch/master/graph/badge.svg)](https://codecov.io/gh/moov-io/achgateway)
+[![Go Report Card](https://goreportcard.com/badge/github.com/moov-io/achgateway)](https://goreportcard.com/report/github.com/moov-io/achgateway)
+[![Apache 2 licensed](https://img.shields.io/badge/license-Apache2-blue.svg)](https://raw.githubusercontent.com/moov-io/achgateway/master/LICENSE)
 
----
+# moov-io/achgateway
 
-Complete local reconstruction from SVBT Full Scale Build.pdf and Timothy Powers BI.pdf, with the supplied Tim Power portrait. React 19, Vite, Three.js, Node.js 24, Express 5, native SQLite, scrypt and PDFKit. No external APIs, analytics, remotely loaded fonts or cloud database are used at runtime. Package installation requires internet access unless npm dependencies are already cached.
+An extensible, highly-available, distributed, and fault-tolerant ACH uploader and downloader. ACH Gateway creates events for outside services and transforms files prior to upload to fit real-world requirements of production systems.
 
-## Start on Windows
+If you believe you have identified a security vulnerability please responsibly report the issue as via email to security@moov.io. Please do not post it to a public issue tracker.
 
-1. Install Node.js 24 or newer from nodejs.org. Close and reopen your terminal after installation.
-2. Open PowerShell in this project folder.
-3. Run:
+## Getting started
 
-```powershell
-npm ci
-Copy-Item .env.example .env
-npm run seed
-npm run dev
+Read through the [project docs](https://moov-io.github.io/achgateway/) to gain an understanding of this project's purpose and how to run it.
+
+We publish a [public Docker image `moov/achgateway`](https://hub.docker.com/r/moov/achgateway/) from Docker Hub (`linux/amd64` and `linux/arm64`) or use this repository. No configuration is required to serve on `:8484` and metrics at `:9494/metrics` in Prometheus format.
+
+Start achgateway and an FTP server:
+```
+# Inside of ./examples/getting-started/
+$ docker compose up achgateway
+...
+achgateway_1  | ts=2021-06-18T23:38:06Z msg="public listening on :8484" version=v0.4.1 level=info app=achgateway
+achgateway_1  | ts=2021-06-18T23:38:06Z msg="listening on [::]:9494" version=v0.4.1 level=info app=achgateway
 ```
 
-4. Open **http://localhost:3000** in current Chrome, Edge or Firefox. Use exactly `localhost`, not `127.0.0.1`, for the configured browser origin. Allow cookies. Secure cookies are supported on localhost by modern browsers. Do not use a custom plain-HTTP hostname; use HTTPS for custom names.
-5. Keep the terminal open. Press Ctrl+C to stop. Database and issued statements persist across restarts.
-
-On macOS/Linux, replace the copy command with `cp .env.example .env`; all npm commands are identical.
-
-First startup also seeds automatically when DEMO_SEED=true. The seed command is idempotent and verifies the four ending balances. It refuses to conceal later ledger corrections by overwriting history.
-
-## Demonstration logins
-
-| Access | Email | Password |
-| --- | --- | --- |
-| VIP customer | sales@bakhtiariautogroup.com | FounderClient!2026 |
-| Moderator | tpower@siliconvalleybankandtrust.com | ModeratorGod!2026 |
-
-Customer: use Log in. Moderator: use Moderator access in the footer. Both screens authenticate against the same server; the screen does not determine permissions. These passwords are public local-demo credentials only.
-
-Before the FIRST seed, change DEMO_CUSTOMER_EMAIL, DEMO_CUSTOMER_PASSWORD, DEMO_MODERATOR_EMAIL and DEMO_MODERATOR_PASSWORD in .env to customize demo credentials. Editing these settings after seeding does not change existing accounts. Use a new DB_PATH for a new demonstration instead of erasing immutable records.
-
-## Exact seeded statements
-
-Bakhtiari Auto Group, LLC — 3155 Stevens Creek San Jose CA 95117. The generated account number is a unique 12-digit number, not a real bank account.
-
-| Month | Opening | Deposits | Expenses | Ending |
-| --- | ---: | ---: | ---: | ---: |
-| June 2026 | $0 | $10,000 | $5,767 | $4,233 |
-| July 2026 | $4,233 | $15,000 | $5,884 | $13,349 |
-| August 2026 | $13,349 | $15,000 | $6,001 | $22,348 |
-| September 2026 | $22,348 | $15,000 | $6,118 | $31,230 |
-
-Each month has a deposit on the second plus 12 deterministic expenses. Every balance derives from integer-cent ledger entries. Four revision-1 PDFs are created in monthly/statements/. The source PDF has a displaced opening-balance table; this reconstruction follows its stated zero-opening and carry-forward rules and exact ending balances.
-
-## Using the workspaces
-
-Customers can view their own balance, transaction-derived chart, search/month-filter history, print history/account details, and update name/address only after confirming the current password. New registrations are customer-only and start at zero.
-
-Moderators select customer accounts, post positive credits or negative debits, and reverse mistakes with an opposite-signed new ledger entry. Original entries cannot be edited or deleted. Investment records can be created/edited with sector, status, target capital, risk and strategy; these records are not public.
-
-The moderator Transactions tab includes a Funds Flow CSV paste form for 1–2000 rows. Use `date,description,amount` columns, quote fields containing commas, and enter amounts in dollars; all rows are validated and posted atomically. Site Settings controls the banner, footer, and hero text and images. Team management supports adding, editing and removing public team members.
-
-In Statements, choose a month, calculate the live preview, then issue a revision. Download its PDF from the archive and run its integrity check. PDFs contain statement dates, account identity, opening/closing amounts, deposits/debits, transaction running balances, revision and page numbers. Statements and statement APIs are moderator-only, as required by the surviving specification.
-
-Backdated transactions change the affected month AND later months' live opening balances. Issue replacement revisions for EVERY affected month. Earlier issued revisions remain immutable; no role can rewrite an issued document, including Tim. This resolves the source's editing language in favor of its immutable-ledger/revision requirement. Audit records capture operations. Integrity checks compare snapshot hashes, stored PDF bytes and filesystem archive bytes; they are not a substitute for independently secured backups.
-
-## Tim Power handover
-
-The About Us / Leadership section uses Tim's supplied portrait and biography. The biography primarily says Timothy Power, while the build document says Timothy Powers; the public source note preserves that discrepancy for his approval. No unsupported employment details, founding date, licensing or FDIC claims were invented.
-
-Tim will complete and approve banking licensing, FDIC and other regulatory information before public launch. This build deliberately identifies itself as a demonstration until those facts and operational approvals are verified. The requested www.siliconvalleybankandtrust.com domain has not been connected or modified.
-
-To provision a clean moderator without demonstration customers, stop the server and set DEMO_SEED=false and DB_PATH=data/handover.sqlite in .env. Then in PowerShell:
-
-```powershell
-$env:MODERATOR_EMAIL = "tpower@siliconvalleybankandtrust.com"
-$secret = Read-Host "Enter a unique moderator password (12 or more characters)" -AsSecureString
-$env:MODERATOR_PASSWORD = [System.Net.NetworkCredential]::new("", $secret).Password
-npm run create-moderator
-Remove-Item Env:MODERATOR_PASSWORD
-npm run dev
+Submit a file to achgateway (Nacha ACH format):
+```
+$ curl -XPOST "http://localhost:8484/shards/foo/files/f6" --data @./testdata/ppd-debit.ach
+...
+achgateway_1  | ts=2021-06-18T23:38:16Z msg="begin handle received ACHFile=f6 of 1918 bytes" level=info app=achgateway version=v0.4.1
+achgateway_1  | ts=2021-06-18T23:38:16Z msg="finished handling ACHFile=f6" level=info app=achgateway version=v0.4.1
 ```
 
-The administrative script does not promote public registrations and rejects demo passwords and existing email addresses. For password rotation of an existing moderator, stop the application and run the same script with MODERATOR_RESET=true and a unique new password; existing sessions are revoked. Keep .env and production credentials out of version control, archives and email. Deliver real credentials through a separate secure channel.
-
-## Build and verify
-
-```powershell
-npm run lint
-npm test
-npm run test:ui
-npm run build
-npm start
+Submit a file to achgateway (moov-io ACH JSON format):
+```
+$ curl -XPOST "http://localhost:8484/shards/foo/files/f4" --data @./testdata/ppd-valid.json
+...
+achgateway_1  | ts=2021-06-18T23:38:16Z msg="begin handle received ACHFile=f4 of 1918 bytes" level=info app=achgateway version=v0.4.1
+achgateway_1  | ts=2021-06-18T23:38:16Z msg="finished handling ACHFile=f4" level=info app=achgateway version=v0.4.1
 ```
 
-npm run test:ui uses installed Microsoft Edge to verify the public page, WebGL canvas, mobile sector dialog, portrait loading, customer login/logout, exact balance, moderator preview/integrity and PDF download. It starts its own local server on port 3005; that port must be free. On machines without Edge, install it or change channel in playwright.config.js and install the matching Playwright browser. The application itself does not require Edge.
-
-npm start serves dist and the protected APIs from one origin. With development settings it is still a local demonstration. Tests use independent temporary databases and HTTP servers; they verify exact monthly continuity, PDF text, server roles, CSRF/origin checks, hashed sessions/passwords, session rotation/expiry, customer isolation, unique accounts, immutability, reversals, investments, audit records, concurrency and moderator provisioning.
-
-## Production constraints
-
-This is a single-instance local banking prototype, NOT a certified live bank platform. Completing licensing/FDIC text alone does not make it suitable to hold real funds. Live launch also requires bank-approved core ledger/database, compliance review, identity verification, MFA, hardened hosting, backups/disaster recovery, monitoring, penetration testing and applicable legal approvals.
-
-Use NODE_ENV=production, DEMO_SEED=false, a fresh DB_PATH, and explicit HTTPS APP_ORIGIN. Seeded/default-password databases must never be deployed. Terminate HTTPS at an approved reverse proxy; TRUST_PROXY=true trusts exactly one proxy and is safe only if direct public access to Node is blocked. Cookies are always Secure, HttpOnly and SameSite=Strict. Server origin and CSRF enforcement remain mandatory. The Node process binds loopback by default. Keep database, statement archives and secrets readable only by authorized operators. Back up SQLite and its WAL consistently using approved SQLite backup tools; coordinate backups with immutable PDF archives.
-
-The original source's suggested HTTP hosts-file domain cannot safely carry its required Secure cookies, so it is not the default installation path. Localhost works without publishing or changing DNS. Public DNS requires the domain owner's authorization and hosting; no DNS is changed by this project.
-
-## Project tree
-
-```text
-SVBT/
-  .env.example
-  .gitignore
-  README.md
-  render.yaml
-  .github/workflows/ci.yml
-  package.json
-  package-lock.json
-  index.html
-  vite.config.js
-  eslint.config.js
-  playwright.config.js
-  public/tim-power.jpg
-  src/main.jsx
-  src/App.jsx
-  src/Portal.jsx
-  src/Scene.jsx
-  src/styles.css
-  server/index.js
-  server/db.js
-  server/site.js
-  server/services.js
-  server/funds-parse.js
-  server/pdf.js
-  server/seed.js
-  server/create-moderator.js
-  scripts/import-portrait.js
-  scripts/package.js
-  tests/banking.test.js
-  tests/pdf.test.js
-  tests/ui/workspace.spec.js
-  data/bank.sqlite (created at seed)
-  monthly/statements/*.pdf (created at seed)
-  dist/ (created at build)
+Initiate cutoff time processing (aka upload to your ODFI):
+```
+$ curl -XPUT "http://localhost:9494/trigger-cutoff" --data '{"shardNames":["testing"]}'
+achgateway_1  | ts=2021-06-18T23:38:20Z msg="starting manual cutoff window processing" level=info app=achgateway version=v0.4.1
+achgateway_1  | ts=2021-06-18T23:38:20Z msg="processing mergable directory foo" level=info app=achgateway version=v0.4.1 shardKey=foo
+achgateway_1  | ts=2021-06-18T23:38:20Z msg="found *upload.FTPTransferAgent agent" version=v0.4.1 shardKey=foo level=info app=achgateway
+achgateway_1  | ts=2021-06-18T23:38:20Z msg="found 1 matching ACH files: []string{\"storage-1/20210618-233820/foo/f4.ach\"}" tenantID=foo level=info app=achgateway version=v0.4.1
+achgateway_1  | ts=2021-06-18T23:38:20Z msg="merged 1 files into 1 files" level=info app=achgateway version=v0.4.1 tenantID=foo
 ```
 
-The deploy configuration and guides are included. No node_modules, private .env, database, original attachments or temporary tooling are included. Run `npm ci` after extraction, then use the commands above to build and start the app.
+View the uploaded file with [`achcli` from moov-io/ach](https://github.com/moov-io/ach#command-line):
+```
+$ achcli ./testdata/ftp-server/outbound/20210618-233820-231380104.ach
+Describing ACH file './testdata/ftp-server/outbound/20210618-233820-231380104.ach'
 
-## Design verification
+  Origin     OriginName   Destination  DestinationName  FileCreationDate  FileCreationTime
+  121042882  Wells Fargo  231380104    Citadel          181008            0101
 
-The site implements responsive navy/copper/ice styling, real extruded Three.js geometry, orbit controls, pause/reduced-motion handling, offscreen suspension and four procedural sector scenes. Inspect desktop and mobile browser widths and use a WebGL-enabled browser to evaluate the visual presentation. Automated build/API/PDF checks do not certify that the design meets a subjective visual standard.
+  BatchNumber  SECCode  ServiceClassCode                CompanyName  DiscretionaryData  Identification  EntryDescription  DescriptiveDate
+  1            PPD      200 (Mixed Debits and Credits)  Wells Fargo                     121042882       Trans. Des
 
-## Brand images
+    TransactionCode       RDFIIdentification  AccountNumber      Amount  Name                    TraceNumber      Category
+    22 (Checking Credit)  23138010            81967038518        100000  Steven Tander           121042880000001
 
-Place `svbt-logo.jpg` (circular logo, used in the header and as favicon) and `svbt-facade.jpg` (bank building, used as the landing-page hero background) in `public/`. If either is missing the site falls back to the text mark and a dark gradient. Moderators manage the banner, footer, hero text and team under **Operations → Site settings / Team**.
+    TransactionCode      RDFIIdentification  AccountNumber      Amount  Name                    TraceNumber      Category
+    27 (Checking Debit)  12104288            17124411           100000  My ODFI                 121042880000002
+
+  ServiceClassCode                EntryAddendaCount  EntryHash  TotalDebits  TotalCredits  MACCode  ODFIIdentification  BatchNumber
+  200 (Mixed Debits and Credits)  2                  35242298   100000       100000                 12104288            1
+
+  BatchCount  BlockCount  EntryAddendaCount  TotalDebitAmount  TotalCreditAmount
+  1           1           2                  100000            100000
+```
+
+Initiate inbound file processing:
+```
+$ curl -XPUT "http://localhost:9494/trigger-inbound"
+achgateway_1  | ts=2021-06-18T23:39:06Z msg="starting odfi periodic processing for testing" level=info app=achgateway version=v0.4.1
+achgateway_1  | ts=2021-06-18T23:39:06Z msg="start retrieving and processing of inbound files in ftp:2121" level=info app=achgateway version=v0.4.1
+achgateway_1  | ts=2021-06-18T23:39:06Z msg="created directory storage-1/download318650464" level=info app=achgateway version=v0.4.1
+achgateway_1  | ts=2021-06-18T23:39:06Z msg="*upload.FTPTransferAgent found 1 inbound files in /returned/" app=achgateway version=v0.4.1 level=info
+achgateway_1  | ts=2021-06-18T23:39:06Z msg="saved return-WEB.ach at storage-1/download318650464/returned/return-WEB.ach" level=info app=achgateway version=v0.4.1
+achgateway_1  | ts=2021-06-18T23:39:06Z msg="*upload.FTPTransferAgent found 1 reconciliation files in /reconciliation/" level=info app=achgateway version=v0.4.1
+achgateway_1  | ts=2021-06-18T23:39:06Z msg="saved ppd-debit.ach at storage-1/download318650464/reconciliation/ppd-debit.ach" level=info app=achgateway version=v0.4.1
+achgateway_1  | ts=2021-06-18T23:39:06Z msg="*upload.FTPTransferAgent found 1 return files in /returned/" level=info app=achgateway version=v0.4.1
+achgateway_1  | ts=2021-06-18T23:39:06Z msg="saved return-WEB.ach at storage-1/download318650464/returned/return-WEB.ach" level=info app=achgateway version=v0.4.1
+achgateway_1  | ts=2021-06-18T23:39:06Z msg="odfi: processing return file" app=achgateway version=v0.4.1 origin=691000134 destination=091400606 level=info
+achgateway_1  | ts=2021-06-18T23:39:06Z msg="odfi: return batch 0 entry 0 code R01" app=achgateway origin=691000134 destination=091400606 version=v0.4.1 level=info
+achgateway_1  | ts=2021-06-18T23:39:06Z msg="odfi: return batch 1 entry 0 code R03" version=v0.4.1 level=info app=achgateway origin=691000134 destination=091400606
+achgateway_1  | ts=2021-06-18T23:39:06Z msg="cleanup: deleted remote file /returned/return-WEB.ach" version=v0.4.1 level=info app=achgateway
+achgateway_1  | ts=2021-06-18T23:39:06Z msg="cleanup: deleted remote file /reconciliation/ppd-debit.ach" level=info app=achgateway version=v0.4.1
+achgateway_1  | ts=2021-06-18T23:39:06Z msg="cleanup: deleted remote file /returned/return-WEB.ach" level=info app=achgateway version=v0.4.1
+achgateway_1  | ts=2021-06-18T23:39:06Z msg="finished odfi periodic processing for testing" app=achgateway version=v0.4.1 level=info
+```
+
+## Usage
+
+achgateway accepts files over HTTP and Kafka to queue them up for upload at a Nacha cutoff time. This allows systems and humans to publish files and have them be optimized for upload. achgateway is inspired by [the work done in moov-io/paygate](https://github.com/moov-io/paygate) and is used in production at Moov.
+
+## Project status
+
+This project is used in production at multiple companies and has reached a stable status. We are looking to improve the configuration of ACHGateway and looking for feedback from real-world usage. Please reach out and share your story.
+
+## Getting help
+
+ channel | info
+ ------- | -------
+[Project Documentation](https://moov-io.github.io/achgateway/) | Our project documentation available online.
+Twitter [@moov](https://twitter.com/moov)	| You can follow Moov.io's Twitter feed to get updates on our project(s). You can also tweet us questions or just share blogs or stories.
+[GitHub Issue](https://github.com/moov-io/achgateway/issues) | If you are able to reproduce a problem please open a GitHub Issue under the specific project that caused the error.
+[moov-io slack](https://slack.moov.io/) | Join our slack channel (`#ach`) to have an interactive discussion about the development of the project.
+
+## Supported and tested platforms
+
+- 64-bit Linux (Ubuntu, Debian), macOS, and Windows
+
+## Contributing
+
+Yes please! Please review our [Contributing guide](CONTRIBUTING.md) and [Code of Conduct](https://github.com/moov-io/ach/blob/master/CODE_OF_CONDUCT.md) to get started! Checkout our [issues for first time contributors](https://github.com/moov-io/achgateway/contribute) for something to help out with.
+
+This project uses [Go Modules](https://github.com/golang/go/wiki/Modules) and uses Go 1.19 or higher. See [Golang's install instructions](https://golang.org/doc/install) for help setting up Go. You can download the source code and we offer [tagged and released versions](https://github.com/moov-io/achgateway/releases/latest) as well. We highly recommend you use a tagged release for production.
+
+### Test coverage
+
+Improving test coverage is a great candidate for new contributors and allows the project to move more quickly by reducing regression issues that might not be caught before a release is pushed out to our users. One great way to improve coverage is by adding edge cases and different inputs to functions (or [contributing and running fuzzers](https://github.com/dvyukov/go-fuzz)).
+
+Tests can run processes (like SQLite databases), but should only do so locally.
+
+## License
+
+Apache License 2.0 - See [LICENSE](LICENSE) for details.
