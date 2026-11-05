@@ -116,6 +116,18 @@ export const migrations = [
         createdAt TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
       );
       CREATE INDEX IF NOT EXISTS external_transfers_actor ON external_transfers(actorId, date);`);
+      // --- ADDED: owner-approved backfill (compliance stop). Runs only when SETTLEMENT_ACCOUNT_ID is set on the server.
+      const approvedSettlement = process.env.SETTLEMENT_ACCOUNT_ID;
+      const existingColumns = new Set(db.prepare('PRAGMA table_info(external_transfers)').all().map(row => row.name));
+      if (approvedSettlement && !existingColumns.has('settlementAccountId')) {
+        const settlementId = Number(approvedSettlement);
+        if (!Number.isSafeInteger(settlementId) || !db.prepare('SELECT 1 FROM accounts WHERE id=?').get(settlementId)) {
+          throw new Error(`SETTLEMENT_ACCOUNT_ID ${approvedSettlement} is not an existing account id`);
+        }
+        db.exec(`ALTER TABLE external_transfers ADD COLUMN settlementAccountId INTEGER NOT NULL DEFAULT ${settlementId}`);
+        db.prepare('INSERT INTO audit(actorId, action, entity, details) VALUES (?, ?, ?, ?)').run(null, 'migration.9.settlement-backfill', 'external_transfers', JSON.stringify({ settlementAccountId: settlementId }));
+      }
+      // --- END ADDED
       const columns = new Set(db.prepare('PRAGMA table_info(external_transfers)').all().map(row => row.name));
       for (const name of ['actorId','fromAccountId','settlementAccountId','debitId','creditId','requestId','requestHash','bankName','nickname','routingNumber','accountNumber','status','reference']) {
         if (!columns.has(name)) throw new Error(`Existing external transfer table lacks ${name}; manual review required before migration`);
